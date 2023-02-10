@@ -17,6 +17,10 @@ import matplotlib.pyplot as plt
 # from tensorflow.keras.layers import Flatten
 # from tensorflow.keras.layers import Dropout
 # from tensorflow.keras.layers import Dense
+import wandb
+from wandb.keras import WandbCallback
+
+from datetime import datetime
 
 class CNN_model:
     
@@ -29,8 +33,25 @@ class CNN_model:
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
+        self.set_config()
         self.scaler = StandardScaler()
+    
+    def set_config(self):
+        self.config = {
+        "epochs":20,
+        "batch_size":64,
+        "loss_function":'mse',
+        "metrics":['mae'],
+        "learning_rate":0.0001
+        # "optimizer":'adam'
+        }
+        wandb.init(project="test-project", entity="msc-thesis",config=self.config)
+        now = datetime.now()
+        date_time = now.strftime("%d_%m_%Y_%H_%M_%S")
+
+        wandb.run.name = wandb.run.id+"_"+date_time
         
+    
     def read_training(self):
         training_file_list = glob.glob(os.path.join(self.training_path,"*.tif"))
         target_gdf = gpd.read_file(self.target_file_path)
@@ -49,8 +70,8 @@ class CNN_model:
         self.x = np.array(self.x)
         # print(self.y)
         self.x = np.nan_to_num(self.x, nan=0)# Check for different value for no data
-        print(f"x shape :{self.x.shape}, y shape: {self.y.shape}")
-        print(np.nanmin(self.x),np.nanmax(self.x))
+        # print(f"x shape :{self.x.shape}, y shape: {self.y.shape}")
+        # print(np.nanmin(self.x),np.nanmax(self.x))
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.x, self.y, test_size=0.25)
         
     def build_CNN(self):
@@ -59,6 +80,7 @@ class CNN_model:
         # config = tf.ConfigProto()
         # config.gpu_options.allow_growth = True
         # sess = tf.Session(config=config)
+
         model = models.Sequential()
         model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=self.patch_dim))
         model.add(layers.MaxPooling2D((2, 2)))
@@ -72,32 +94,33 @@ class CNN_model:
         model.add(layers.Dense(32, activation='relu'))
         
         model.add(layers.Dense(1,activation='linear'))
-        model.compile(optimizer='adam',
-                      loss='mse', metrics=['mae'])
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.config["learning_rate"]),
+                      loss=self.config["loss_function"], metrics=self.config["metrics"])
         
         # early stopping callback
-        es = EarlyStopping(monitor='val_loss',
-                   mode='min',
-                   patience=50,
-                   restore_best_weights = True)
+        # es = EarlyStopping(monitor='val_loss',
+        #            mode='min',
+        #            patience=50,
+        #            restore_best_weights = True)
         
         history = model.fit(self.X_train, self.y_train,
                     validation_data = (self.X_test, self.y_test),
-                    callbacks=[es],
-                    epochs=50,
-                    batch_size=8,
+                    callbacks=[WandbCallback()],
+                    # callbacks=[es],
+                    epochs=self.config["epochs"],
+                    batch_size=self.config["batch_size"],
                     verbose=1)
-        model.save('Output/models/CNN/')
-        plt.plot(history.history['loss'], label='loss')
-        plt.plot(history.history['val_loss'], label = 'val_loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.ylim([0.5, 1])
-        plt.legend(loc='lower right')
+#         model.save('Output/models/CNN/')
+#         plt.plot(history.history['loss'], label='loss')
+#         plt.plot(history.history['val_loss'], label = 'val_loss')
+#         plt.xlabel('Epoch')
+#         plt.ylabel('Accuracy')
+#         plt.ylim([0.5, 1])
+#         plt.legend(loc='lower right')
 
-        # test_loss, test_acc = model.evaluate(test_images,  test_labels, verbose=2)
-        plt.savefig("Output/CNN_loss_acc.png")
-        plt.close()
+#         # test_loss, test_acc = model.evaluate(test_images,  test_labels, verbose=2)
+#         plt.savefig("Output/models/CNN/CNN_loss_acc.png")
+#         plt.close()
     
     def run(self):
         self.read_training()
