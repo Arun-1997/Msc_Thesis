@@ -74,6 +74,8 @@ class CNN_model:
         # print(np.nanmin(self.x),np.nanmax(self.x))
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.x, self.y, test_size=0.25)
         
+        #Also, split the training into train and val
+        # For testing, keep a part of the dataset as seperate (final month)
     def build_CNN(self):
         ## Set the model architecture here
         

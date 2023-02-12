@@ -163,6 +163,22 @@ class DataPreparation:
                 with rio.open(outpath, 'w', **meta) as outds:
                     outds.write(inds.read(window=window))
               
+    def get_ndvi_patch(self,patch_src):
+        smin=0 
+        smax=255
+
+        x = patch_src.read(8) #NIR Band
+        bandNIR = ( x - np.nanmin(x) ) * (smax - smin) / ( np.nanmax(x) - np.nanmin(x) ) + smin
+        y = patch_src.read(4) #Red Band
+        bandRed = ( y - np.nanmin(y) ) * (smax - smin) / ( np.nanmax(y) - np.nanmin(y) ) + smin
+        ndvi = np.zeros(patch_src.read(1).shape, dtype=rio.float32)
+        ndvi = ((bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float)))
+        avg_ndvi = np.nanmean(ndvi)
+        min_ndvi = np.nanmin(ndvi)
+        max_ndvi = np.nanmax(ndvi)
+        return avg_ndvi,min_ndvi,max_ndvi
+
+    
     def set_target_for_patches(self,state_name):
         yield_inp_gdf = gpd.read_file(self.outdir+"/yield_val/yield_2021.shp")
         yield_inp = yield_inp_gdf[yield_inp_gdf['STATE_NAME'] == state_name]
@@ -178,11 +194,15 @@ class DataPreparation:
         patch_name_list = []
         target_yield_list = []
         patch_geom = []
+        ndvi_avg = []
+        ndvi_min = []
+        ndvi_max = []
         # gg = gpd.Geo
         for i_patch in patch_files:
             print(i_patch)
             patch_src = rio.open(i_patch)
-            # nodata = patch_src.nodata
+            avg_ndvi,min_ndvi,max_ndvi = self.get_ndvi_patch(patch_src)
+            print(avg_ndvi,min_ndvi,max_ndvi)
             patch_bounds = list(patch_src.bounds)
             yield_inp_clip = gpd.clip(yield_inp,patch_bounds)
             yield_inp_clip["pixel_count"] = [i["count"] for i in zonal_stats(vectors=yield_inp_clip['geometry'], raster=i_patch, 
@@ -192,11 +212,17 @@ class DataPreparation:
             patch_name = i_patch.split("/")[-1].split(".")[0]
             patch_name_list.append(patch_name)
             target_yield_list.append(target_yield)
+            ndvi_avg.append(avg_ndvi)
+            ndvi_min.append(min_ndvi)
+            ndvi_max.append(max_ndvi)
             patch_geom.append(box(patch_bounds[0],patch_bounds[1],patch_bounds[2],patch_bounds[3]))
             patch_src.close()
 
         target_dict["patch_name"] = patch_name_list
         target_dict["yld_kg_sqm"] = target_yield_list
+        target_dict["ndvi_avg"] = ndvi_avg
+        target_dict["ndvi_max"] = ndvi_max
+        target_dict["ndvi_min"] = ndvi_min
         target_dict["geometry"] = patch_geom
         target_gdf = gpd.GeoDataFrame(target_dict,crs="EPSG:4269")
         out_path = os.path.join(self.sentinel_image_dir,"Target/Iowa_2021.shp")
