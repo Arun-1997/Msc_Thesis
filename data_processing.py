@@ -12,25 +12,30 @@ from sklearn.preprocessing import StandardScaler
 from rasterio import windows,mask
 from rasterstats import zonal_stats
 import glob,fiona
-
+from rasterio.merge import merge
 
 class DataPreparation:
 
     def __init__(self):
+        
+        # To ignore nan value when normalising the values using sklearn#
+        np.seterr(divide='ignore', invalid='ignore')
+        
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
         self.soybean_yield_path = "Input/soybean_yield/soybean_yield_county_level.csv"
         self.county_bdry_path = "Input/county_boundary/county_layer.shp"
         self.outdir = "Output/"
-        self.year_list = ['2015','2016','2017','2018','2019','2020','2021']
+        # self.year_list = ['2016','2017','2018','2019','2020','2021']
+        self.year_list = ['2020','2021']
+
         self.tiles_dir = "Input/sentinel/2021/sent_2021_tiles"
-        self.sentinel_image_dir = "Input/sentinel/2021"
+        self.sentinel_image_dir = "Input/sentinel"
         self.plot_dir = "Input/plots/"
         # self.sent2_500m_cdl = "Input/sentinel/2021/sent2_2021_500m/sent2_cdl_2021_500m.tif"
         # self.sent2_2021_500m = "Input/sentinel/2021/sent2_2021_500m/MscThesis_sentinel2_2021.tif"
-        self.inp_raster_path = os.path.join(self.sentinel_image_dir,"sent2_2021_Iowa_60m/sentinel2_Iowa_60m_clipped.tif")
-        
-        self.CDL_path = "Input/cdl/Iowa_60m/CDL_Soybean_Iowa_60m_2021_clipped.tif"
-        self.CDL_dir = "Input/cdl/Iowa_60m/"
+        self.inp_raster_path = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/")
+        self.target_dir = "Input/Target/"
+        self.CDL_dir = "Input/cdl/"
         self.patch_size = 256
         self.scaler = StandardScaler()
         # self.tile_height = 512
@@ -92,9 +97,21 @@ class DataPreparation:
             window = windows.Window(col_off=col_off,row_off=row_off,width=patch_dim,height=patch_dim).intersection(big_window)
             transform = windows.transform(window, ds.transform)
             yield window, transform
+    
+    def get_merged_sentinel(self,outpath):
+        inp_file_list = glob.glob(outpath+"/*.tif")
+        inp_files_layer = [rio.open(i) for i in inp_file_list]
+        
+        merged_layer = merge(inp_files_layer)
+        for i in inp_files_layer:
+            i.close()
+        
+        return merged_layer[0]
+        
         
     def set_masked_layer(self,year, outpath):
-        sent_input = rio.open(self.inp_raster_path)
+        sent_input = self.get_merged_sentinel(outpath)
+        
         cdl_layer = rio.open(self.CDL_path)
         # Masking of the CDL is done based on the availability of yield value for those counties at that year
         masked_gdf_path = self.outdir+"/yield_val/yield_"+str(year)+".shp"
@@ -109,35 +126,31 @@ class DataPreparation:
                          "width": masked_cdl.shape[2],
                          "transform": masked_transform})
         
-        with rio.open(self.CDL_dir+"CDL_Soybean_Iowa_60m_2021_clipped_masked.tif", "w", **out_meta) as dest:
+        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Iowa_60m_2016_masked.tif"
+        with rio.open(masked_cdl_path, "w", **out_meta) as dest:
             dest.write(masked_cdl)
-
-        cdl_layer.close()
+        cdl_layer.close()        
+        cdl_mask_layer = rio.open(masked_cdl_path)
         
-        cdl_mask_layer = rio.open(self.CDL_dir+"CDL_Soybean_Iowa_60m_2021_clipped_masked.tif")
-        sent_input_12_bands = sent_input.read()[0:12]
+        # sent_input_12_bands = sent_input.read()[0:12]
+        sent_input_12_bands = sent_input[0:12]
+
         cdl = cdl_mask_layer.read(1)
         sent_masked = sent_input_12_bands*cdl
-        
         sent_masked[sent_masked == 0] = np.nan
-        
-        sent_masked_norm = self.scaler.fit_transform(sent_masked.reshape(-1, sent_masked.shape[-1])).reshape(sent_masked.shape)
-        
-        meta = sent_input.meta.copy()
+        # sent_masked_norm = self.scaler.fit_transform(sent_masked.reshape(-1, sent_masked.shape[-1])).reshape(sent_masked.shape)
+        meta = cdl_mask_layer.meta.copy()
         meta.update(count=12)
-        
-        self.masked_out_file = outpath+"/sentinel_masked.tif"
-    
+        self.masked_out_file = outpath+"/sentinel_masked_"+str(year)+".tif"
         with rio.open(self.masked_out_file, 'w', **meta) as outds:
-            outds.write(sent_masked_norm)
-       
-        show(sent_masked_norm[7],cmap="Greens")
-        plt.savefig(os.path.join(self.plot_dir,"sentinel_masked.png"))
+            outds.write(sent_masked)
+        show(sent_masked[7],cmap="Greens")
+        plt.savefig(os.path.join(self.plot_dir,"sentinel_masked_"+str(year)+".png"))
         plt.close()
-        sent_input.close()
+        # sent_input.close()
         cdl_mask_layer.close()
         
-    def get_tile_patches(self, in_path, fname_prefix, patch_dim):
+    def get_tile_patches(self, in_path,out_path ,fname_prefix, patch_dim):
 
         # in_path = os.path.join(self.sentinel_image_dir,"sent2_2021_Iowa_60m")
         # in_path = glob.glob(in_path+"/*.tif")
@@ -145,13 +158,14 @@ class DataPreparation:
         # in_path = [self.inp_raster_path,self.CDL_pathCDL]
         # for image in in_path:
         input_filename = in_path
-        out_path = 'Input/sentinel/2021/sent2_2021_Iowa_60m/Iowa_masked_patches/'
+        # out_path = 'Input/sentinel/2021/sent2_2021_Iowa_60m/Iowa_masked_patches/'
+        out_path = out_path
         output_filename = fname_prefix+'_{}-{}.tif'
         print(input_filename)
         with rio.open(input_filename) as inds:
             meta = inds.meta.copy()
             for window, transform in self.get_tiles(inds,patch_dim):
-                print(window)
+                
                 meta['transform'] = transform
                 meta['width'], meta['height'] = window.width, window.height
                 # if fname_prefix== "cdl":
@@ -159,6 +173,7 @@ class DataPreparation:
                 # else:
                 if np.isnan(inds.read(window=window)).all():
                     continue
+                print(window)
                 outpath = os.path.join(out_path,output_filename.format(int(window.col_off), int(window.row_off)))
                 with rio.open(outpath, 'w', **meta) as outds:
                     outds.write(inds.read(window=window))
@@ -168,9 +183,11 @@ class DataPreparation:
         smax=255
 
         x = patch_src.read(8) #NIR Band
-        bandNIR = ( x - np.nanmin(x) ) * (smax - smin) / ( np.nanmax(x) - np.nanmin(x) ) + smin
+        # bandNIR = ( x - np.nanmin(x) ) * (smax - smin) / ( np.nanmax(x) - np.nanmin(x) ) + smin
+        bandNIR = x
         y = patch_src.read(4) #Red Band
-        bandRed = ( y - np.nanmin(y) ) * (smax - smin) / ( np.nanmax(y) - np.nanmin(y) ) + smin
+        # bandRed = ( y - np.nanmin(y) ) * (smax - smin) / ( np.nanmax(y) - np.nanmin(y) ) + smin
+        bandRed = y
         ndvi = np.zeros(patch_src.read(1).shape, dtype=rio.float32)
         ndvi = ((bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float)))
         avg_ndvi = np.nanmean(ndvi)
@@ -179,8 +196,8 @@ class DataPreparation:
         return avg_ndvi,min_ndvi,max_ndvi
 
     
-    def set_target_for_patches(self,state_name):
-        yield_inp_gdf = gpd.read_file(self.outdir+"/yield_val/yield_2021.shp")
+    def set_target_for_patches(self,state_name,year,output_name):
+        yield_inp_gdf = gpd.read_file(self.outdir+"/yield_val/yield_"+str(year)+".shp")
         yield_inp = yield_inp_gdf[yield_inp_gdf['STATE_NAME'] == state_name]
         yield_inp = yield_inp.drop_duplicates(subset='County', keep="first") #Removing duplicates complicates since there are counties with same name in different states. Need to find a better solution to remove duplicates instead of using County column as subset
         #1 Bushel =  27.2 Kg
@@ -188,8 +205,8 @@ class DataPreparation:
         yield_kg_per_sq_m = 27.2/4046.86
         yield_inp["yield_in_kg_per_sqm"] = yield_inp["Value"]*yield_kg_per_sq_m
         
-        patch_files_path = 'Input/sentinel/2021/sent2_2021_Iowa_60m/Iowa_masked_patches/'
-        patch_files = glob.glob(patch_files_path+"*.tif")
+        patch_files_path = self.patchs_output_dir
+        patch_files = glob.glob(patch_files_path+"*"+str(year)+"*.tif")
         target_dict = dict()
         patch_name_list = []
         target_yield_list = []
@@ -202,9 +219,11 @@ class DataPreparation:
             print(i_patch)
             patch_src = rio.open(i_patch)
             avg_ndvi,min_ndvi,max_ndvi = self.get_ndvi_patch(patch_src)
-            print(avg_ndvi,min_ndvi,max_ndvi)
+            
             patch_bounds = list(patch_src.bounds)
             yield_inp_clip = gpd.clip(yield_inp,patch_bounds)
+            if len(yield_inp_clip['geometry']) == 0:
+                continue
             yield_inp_clip["pixel_count"] = [i["count"] for i in zonal_stats(vectors=yield_inp_clip['geometry'], raster=i_patch, 
                                                                              categorical=False,stats='count')]
             yield_inp_clip["yield_per_county_in_KG"] = yield_inp_clip["yield_in_kg_per_sqm"]*yield_inp_clip["pixel_count"]*3600
@@ -219,13 +238,14 @@ class DataPreparation:
             patch_src.close()
 
         target_dict["patch_name"] = patch_name_list
+        target_dict["year"] = year
         target_dict["yld_kg_sqm"] = target_yield_list
         target_dict["ndvi_avg"] = ndvi_avg
         target_dict["ndvi_max"] = ndvi_max
         target_dict["ndvi_min"] = ndvi_min
         target_dict["geometry"] = patch_geom
         target_gdf = gpd.GeoDataFrame(target_dict,crs="EPSG:4269")
-        out_path = os.path.join(self.sentinel_image_dir,"Target/Iowa_2021.shp")
+        out_path = os.path.join(self.target_dir,output_name+str(year)+".shp")
         target_gdf.plot(column="yld_kg_sqm",legend=True,cmap="Greens")
         plt.title("Target Yield for patches")
         plt.savefig(os.path.join(self.plot_dir,"target_yield_patches.png"))
@@ -237,11 +257,18 @@ class DataPreparation:
         # self.read_input_raster()
         # self.get_ndvi(self.sent2_500m_cdl,"NDVI_CDL_2021_500m")
         # self.get_ndvi(self.sent2_2021_500m,"NDVI_Sent2_2021_500m")
-        # self.set_masked_layer(2021,os.path.join(self.sentinel_image_dir,"sent2_2021_Iowa_60m/"))
-        # self.masked_out_file = os.path.join(self.sentinel_image_dir,"sent2_2021_Iowa_60m/sentinel_masked.tif")
-        # self.get_tile_patches(self.masked_out_file,"sentinel",self.patch_size)
-        # self.get_tile_patches(self.CDL_path,"cdl",self.patch_size)
-        self.set_target_for_patches("Iowa")
+        
+        # self.patchs_output_dir = "Input/sentinel/patches/Iowa_July_1_31/"
+        # self.set_target_for_patches("Iowa",2019,"Iowa")
+        
+        
+        for year in self.year_list:
+            self.CDL_path = "Input/cdl/CDL_Soybean_Iowa_60m_"+year+".tif"
+            self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
+            # self.masked_out_file = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/sentinel_masked_2016.tif")
+            self.patchs_output_dir = "Input/sentinel/patches/Iowa_July_1_31/"
+            self.get_tile_patches(self.masked_out_file,self.patchs_output_dir,"Iowa_"+year+"_july",self.patch_size)
+            self.set_target_for_patches("Iowa",int(year),"Iowa")
         
 if __name__ == "__main__":
     
