@@ -27,9 +27,9 @@ class CNN_model:
     def __init__(self):
         
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.training_path = "Input/sentinel/2021/sent2_2021_Iowa_60m/Iowa_masked_patches/"
-        self.target_file_path = "Input/sentinel/2021/Target/Iowa_2021.shp" 
-        self.patch_dim = (256, 256, 12)
+        self.training_path = "Input/sentinel/patches/Iowa_July_1_31/"
+        self.target_file_path = "Input/Target/concat/Iowa.shp"
+        self.patch_dim = (256, 256, 13)
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
@@ -38,7 +38,7 @@ class CNN_model:
     
     def set_config(self):
         self.config = {
-        "epochs":20,
+        "epochs":100,
         "batch_size":64,
         "loss_function":'mse',
         "metrics":['mae'],
@@ -55,22 +55,38 @@ class CNN_model:
     def read_training(self):
         training_file_list = glob.glob(os.path.join(self.training_path,"*.tif"))
         target_gdf = gpd.read_file(self.target_file_path)
+        print("Total Number of Patches:",len(training_file_list))
         
+        count = 0 
         for file in training_file_list:
+            count +=1
+            # if count > 300:
+            #     break
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
             patch_src_read = reshape_as_image(patch_src.read())
             if patch_src_read.shape != self.patch_dim:
                 self.ignore_patch_list.append(f_name)
+                print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
+                continue
+                
+            if np.isnan(patch_src_read).any():
+                print("Has Nan values, skipping patch : {}".format(f_name))
+                continue
+            
+            query = target_gdf.query(f"patch_name == '{f_name}'")["yld_kg_sqm"]
+            if len(query) != 1:
+                print("patch has no target value, skipping patch : {}".format(f_name))
                 continue
             self.x.append(patch_src_read)
-            self.y.append(float(target_gdf.query(f"patch_name == '{f_name}'")["yld_kg_sqm"]))
+            self.y.append(float(query))
             patch_src.close()
         self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
         self.x = np.array(self.x)
+        print("Any Null values? ",np.isnan(self.x).any())
         # print(self.y)
-        self.x = np.nan_to_num(self.x, nan=0)# Check for different value for no data
-        # print(f"x shape :{self.x.shape}, y shape: {self.y.shape}")
+        # self.x = np.nan_to_num(self.x, nan=0)# Check for different value for no data
+        print(f"x shape :{self.x.shape}, y shape: {self.y.shape}")
         # print(np.nanmin(self.x),np.nanmax(self.x))
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.x, self.y, test_size=0.25)
         

@@ -5,7 +5,7 @@ import pandas as pd
 from osgeo import gdal
 import matplotlib.pyplot as plt
 import numpy as np
-from rasterio.plot import show
+from rasterio.plot import show,reshape_as_raster, reshape_as_image
 from itertools import product
 import rasterio as rio
 from sklearn.preprocessing import StandardScaler
@@ -25,8 +25,8 @@ class DataPreparation:
         self.soybean_yield_path = "Input/soybean_yield/soybean_yield_county_level.csv"
         self.county_bdry_path = "Input/county_boundary/county_layer.shp"
         self.outdir = "Output/"
-        # self.year_list = ['2016','2017','2018','2019','2020','2021']
-        self.year_list = ['2020','2021']
+        self.year_list = ['2016','2017','2018','2019','2020','2021']
+        # self.year_list = ['2020','2021']
 
         self.tiles_dir = "Input/sentinel/2021/sent_2021_tiles"
         self.sentinel_image_dir = "Input/sentinel"
@@ -98,8 +98,8 @@ class DataPreparation:
             transform = windows.transform(window, ds.transform)
             yield window, transform
     
-    def get_merged_sentinel(self,outpath):
-        inp_file_list = glob.glob(outpath+"/*.tif")
+    def get_merged_sentinel(self,year,outpath):
+        inp_file_list = glob.glob(outpath+"/*MscThesis_sentinel2*"+str(year)+"*.tif")
         inp_files_layer = [rio.open(i) for i in inp_file_list]
         
         merged_layer = merge(inp_files_layer)
@@ -107,10 +107,9 @@ class DataPreparation:
             i.close()
         
         return merged_layer[0]
-        
-        
-    def set_masked_layer(self,year, outpath):
-        sent_input = self.get_merged_sentinel(outpath)
+
+    def set_merged_layer(self,year, outpath):
+        sent_input = self.get_merged_sentinel(year,outpath)
         
         cdl_layer = rio.open(self.CDL_path)
         # Masking of the CDL is done based on the availability of yield value for those counties at that year
@@ -126,7 +125,54 @@ class DataPreparation:
                          "width": masked_cdl.shape[2],
                          "transform": masked_transform})
         
-        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Iowa_60m_2016_masked.tif"
+        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Iowa_60m_"+str(year)+"_masked.tif"
+        with rio.open(masked_cdl_path, "w", **out_meta) as dest:
+            dest.write(masked_cdl)
+        cdl_layer.close()        
+        cdl_mask_layer = rio.open(masked_cdl_path)
+        
+        # sent_input_12_bands = sent_input.read()[0:12]
+        sent_input_12_bands = sent_input[0:12]
+
+        cdl = cdl_mask_layer.read(1)
+        sent_masked = sent_input_12_bands[0]*cdl
+        sent_masked = np.nan_to_num(sent_masked,nan=-9999)
+        sent_masked[(sent_masked != 0) & (sent_masked!=-9999)] = 1
+        sent_masked[sent_masked == -9999] = np.nan
+        # sent_masked_norm = self.scaler.fit_transform(sent_masked.reshape(-1, sent_masked.shape[-1])).reshape(sent_masked.shape)
+        sent_input_12_bands_img = reshape_as_image(sent_input_12_bands)
+        sent_input_13_bands_img = np.dstack((sent_input_12_bands_img,sent_masked))
+        sent_input_13_bands = reshape_as_raster(sent_input_13_bands_img)
+        
+        meta = cdl_mask_layer.meta.copy()
+        meta.update(count=13)
+        self.merged_out_file = outpath+"/sentinel_merged_"+str(year)+".tif"
+        with rio.open(self.merged_out_file, 'w', **meta) as outds:
+            outds.write(sent_input_13_bands)
+        show(sent_input_13_bands[8],cmap="Greens")
+        plt.savefig(os.path.join(self.plot_dir,"sentinel_merged_"+str(year)+".png"))
+        plt.close()
+        # sent_input.close()
+        cdl_mask_layer.close()
+        
+    def set_masked_layer(self,year, outpath):
+        sent_input = self.get_merged_sentinel(year,outpath)
+        
+        cdl_layer = rio.open(self.CDL_path)
+        # Masking of the CDL is done based on the availability of yield value for those counties at that year
+        masked_gdf_path = self.outdir+"/yield_val/yield_"+str(year)+".shp"
+        with fiona.open(masked_gdf_path, "r") as shapefile:
+            shapes = [feature["geometry"] for feature in shapefile]
+
+        masked_cdl,masked_transform = mask.mask(cdl_layer, shapes, crop=True)
+        
+        out_meta = cdl_layer.meta
+        out_meta.update({"driver": "GTiff",
+                         "height": masked_cdl.shape[1],
+                         "width": masked_cdl.shape[2],
+                         "transform": masked_transform})
+        
+        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Iowa_60m_"+str(year)+"_masked.tif"
         with rio.open(masked_cdl_path, "w", **out_meta) as dest:
             dest.write(masked_cdl)
         cdl_layer.close()        
@@ -205,7 +251,7 @@ class DataPreparation:
         yield_kg_per_sq_m = 27.2/4046.86
         yield_inp["yield_in_kg_per_sqm"] = yield_inp["Value"]*yield_kg_per_sq_m
         
-        patch_files_path = self.patchs_output_dir
+        patch_files_path = self.patchs_masked_output_dir
         patch_files = glob.glob(patch_files_path+"*"+str(year)+"*.tif")
         target_dict = dict()
         patch_name_list = []
@@ -264,11 +310,16 @@ class DataPreparation:
         
         for year in self.year_list:
             self.CDL_path = "Input/cdl/CDL_Soybean_Iowa_60m_"+year+".tif"
-            self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
+            self.set_merged_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
+            
+            # self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
             # self.masked_out_file = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/sentinel_masked_2016.tif")
             self.patchs_output_dir = "Input/sentinel/patches/Iowa_July_1_31/"
-            self.get_tile_patches(self.masked_out_file,self.patchs_output_dir,"Iowa_"+year+"_july",self.patch_size)
-            self.set_target_for_patches("Iowa",int(year),"Iowa")
+            # self.patchs_masked_output_dir = "Input/sentinel/patches_masked/Iowa_July_1_31/"
+            self.get_tile_patches(self.merged_out_file,self.patchs_output_dir,"Iowa_"+year+"_july",self.patch_size)
+            
+            # self.get_tile_patches(self.masked_out_file,self.patchs_masked_output_dir,"Iowa_"+year+"_july",self.patch_size)
+            # self.set_target_for_patches("Iowa",int(year),"Iowa")
         
 if __name__ == "__main__":
     
