@@ -23,11 +23,14 @@ class CNN_evaluate:
         self.true_val = list()
         self.patch_name_list = list()
         self.patch_geom_list = list()
-        self.patch_dim = (256, 256, 13)
+        self.patch_dim = (256, 256, 12) # Change if you want to include include mask layer (
+        # 13 for mask layer
+        # 12 for only the bands
         wandb.init(project="CNN_model_evaluate", entity="msc-thesis")
         now = datetime.now()
         date_time = now.strftime("%d_%m_%Y_%H_%M_%S")
-        self.model_id = "aanaxs4g"
+        # self.model_id = "aanaxs4g" # With mask
+        self.model_id = "ezb3xkqf" # No Mask
         wandb.run.name = self.model_id+"_eval_"+date_time
         
     def read_test(self):
@@ -38,10 +41,10 @@ class CNN_evaluate:
         count = 0 
         
         for file in test_file_list:
-
+            
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            patch_src_read = reshape_as_image(patch_src.read())
+            patch_src_read = reshape_as_image(patch_src.read()[0:12]) #Change if want to include mask layer
             if patch_src_read.shape != self.patch_dim:
                 # self.ignore_patch_list.append(f_name)
                 # print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
@@ -90,7 +93,11 @@ class CNN_evaluate:
 
     
     def run(self):
-        self.model = models.load_model('wandb/run-20230214_023939-aanaxs4g/files/model-best.h5')
+        
+        model_path = glob.glob("wandb/"+ "*"+self.model_id+"*" + "/files/model-best.h5")[0]
+        
+        # print(model_path)
+        self.model = models.load_model(model_path)
 
         self.read_test()
         

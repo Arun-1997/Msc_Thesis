@@ -30,7 +30,7 @@ class CNN_model:
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
         self.training_path = "Input/sentinel/patches_256/Iowa_July_1_31/train/"
         self.target_file_path = "Input/Target_256/concat/Iowa.shp"
-        self.patch_dim = (256, 256, 13)
+        self.patch_dim = (256, 256, 12)
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
@@ -63,7 +63,7 @@ class CNN_model:
 
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            patch_src_read = reshape_as_image(patch_src.read())
+            patch_src_read = reshape_as_image(patch_src.read()[0:12]) ## Change the index here to add or remove the mask layer
             if patch_src_read.shape != self.patch_dim:
                 self.ignore_patch_list.append(f_name)
                 # print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
