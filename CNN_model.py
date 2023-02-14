@@ -5,7 +5,7 @@ from numpy import array
 import rasterio as rio
 from rasterio.plot import reshape_as_image
 import geopandas as gpd
-from sklearn.preprocessing import StandardScaler
+# from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 # from tensorflow.keras.layers import Dense
 import wandb
 from wandb.keras import WandbCallback
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from datetime import datetime
 
@@ -27,14 +28,14 @@ class CNN_model:
     def __init__(self):
         
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.training_path = "Input/sentinel/patches/Iowa_July_1_31/"
-        self.target_file_path = "Input/Target/concat/Iowa.shp"
+        self.training_path = "Input/sentinel/patches_256/Iowa_July_1_31/train/"
+        self.target_file_path = "Input/Target_256/concat/Iowa.shp"
         self.patch_dim = (256, 256, 13)
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
         self.set_config()
-        self.scaler = StandardScaler()
+        # self.scaler = StandardScaler()
     
     def set_config(self):
         self.config = {
@@ -59,29 +60,32 @@ class CNN_model:
         
         count = 0 
         for file in training_file_list:
-            count +=1
-            # if count > 300:
-            #     break
+
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
             patch_src_read = reshape_as_image(patch_src.read())
             if patch_src_read.shape != self.patch_dim:
                 self.ignore_patch_list.append(f_name)
-                print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
+                # print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
                 continue
                 
             if np.isnan(patch_src_read).any():
-                print("Has Nan values, skipping patch : {}".format(f_name))
+                # print("Has Nan values, skipping patch : {}".format(f_name))
                 continue
             
-            query = target_gdf.query(f"patch_name == '{f_name}'")["yld_kg_sqm"]
+            query = target_gdf.query(f"patch_name == '{f_name}'")["ykg_by_e7"]
             if len(query) != 1:
-                print("patch has no target value, skipping patch : {}".format(f_name))
+                # print("patch has no target value, skipping patch : {}".format(f_name))
                 continue
             self.x.append(patch_src_read)
             self.y.append(float(query))
             patch_src.close()
-        self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
+            count +=1
+            if count > 2000:
+                break
+
+        # self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
+        self.y = np.array(self.y)
         self.x = np.array(self.x)
         print("Any Null values? ",np.isnan(self.x).any())
         # print(self.y)
