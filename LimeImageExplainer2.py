@@ -14,7 +14,6 @@ from sklearn.utils import check_random_state
 from skimage.color import gray2rgb
 from tqdm.auto import tqdm
 
-
 from lime import lime_base
 from lime.wrappers.scikit_image import SegmentationAlgorithm
 
@@ -66,7 +65,7 @@ class LimeImageExplainer2(object):
 
     def explain_instance(self, image, classifier_fn, labels=(1,),
                          hide_color=None,
-                         top_labels=5, num_features=100000, num_samples=1000,
+                         top_labels=1, num_features=100000, num_samples=1000,
                          batch_size=10,
                          segmentation_fn=None,
                          distance_metric='cosine',
@@ -118,17 +117,31 @@ class LimeImageExplainer2(object):
             # segmentation_fn = SegmentationAlgorithm('quickshift', kernel_size=4,
             #                                         max_dist=200, ratio=0.2,
             #                                         random_seed=random_seed)
-            print(image.shape)
-            segmentation_fn = self.quickshift(np.array(image), kernel_size=4,max_dist=200,random_seed=random_seed)
+            
+            segmentation_fn = quickshift(image, kernel_size=4,max_dist=200,convert2lab=False,random_seed=random_seed)
         segments = segmentation_fn
 
-        fudged_image = image.copy()
+        fudged_image = image[0].copy()
+        image = image[0]
+ 
         if hide_color is None:
             for x in np.unique(segments):
+               
                 fudged_image[segments == x] = (
                     np.mean(image[segments == x][:, 0]),
                     np.mean(image[segments == x][:, 1]),
-                    np.mean(image[segments == x][:, 2]))
+                    np.mean(image[segments == x][:, 2]),
+                    np.mean(image[segments == x][:, 3]),
+                    np.mean(image[segments == x][:, 4]),
+                    np.mean(image[segments == x][:, 5]),
+                    np.mean(image[segments == x][:, 6]),
+                    np.mean(image[segments == x][:, 7]),
+                    np.mean(image[segments == x][:, 8]),
+                    np.mean(image[segments == x][:, 9]),
+                    np.mean(image[segments == x][:, 10]),
+                    np.mean(image[segments == x][:, 11])
+                    # np.mean(image[segments == x][:, 12])
+                )
         else:
             fudged_image[:] = hide_color
 
@@ -208,76 +221,148 @@ class LimeImageExplainer2(object):
             labels.extend(preds)
         return data, np.array(labels)
     
-    def quickshift(image, ratio=0.2, kernel_size=5, max_dist=10,return_tree=False, sigma=0, 
-                   convert2lab=True, random_seed=42,*,channel_axis=-1):
-        """Segments image using quickshift clustering in Color-(x,y) space.
-        Produces an oversegmentation of the image using the quickshift mode-seeking
-        algorithm.
-        Parameters
-        ----------
-        image : (width, height, channels) ndarray
-            Input image. The axis corresponding to color channels can be specified
-            via the `channel_axis` argument.
-        ratio : float, optional, between 0 and 1
-            Balances color-space proximity and image-space proximity.
-            Higher values give more weight to color-space.
-        kernel_size : float, optional
-            Width of Gaussian kernel used in smoothing the
-            sample density. Higher means fewer clusters.
-        max_dist : float, optional
-            Cut-off point for data distances.
-            Higher means fewer clusters.
-        return_tree : bool, optional
-            Whether to return the full segmentation hierarchy tree and distances.
-        sigma : float, optional
-            Width for Gaussian smoothing as preprocessing. Zero means no smoothing.
-        convert2lab : bool, optional
-            Whether the input should be converted to Lab colorspace prior to
-            segmentation. For this purpose, the input is assumed to be RGB.
-        random_seed : int, optional
-            Random seed used for breaking ties.
-        channel_axis : int, optional
-            The axis of `image` corresponding to color channels. Defaults to the
-            last axis.
-        Returns
-        -------
-        segment_mask : (width, height) ndarray
-            Integer mask indicating segment labels.
-        Notes
-        -----
-        The authors advocate to convert the image to Lab color space prior to
-        segmentation, though this is not strictly necessary. For this to work, the
-        image must be given in RGB format.
-        References
-        ----------
-        .. [1] Quick shift and kernel methods for mode seeking,
-               Vedaldi, A. and Soatto, S.
-               European Conference on Computer Vision, 2008
+
+    
+class ImageExplanation(object):
+    def __init__(self, image, segments):
+        """Init function.
+        Args:
+            image: 3d numpy array
+            segments: 2d numpy array, with the output from skimage.segmentation
         """
-        print(type(image))
-        # image = image[0]
-        image = img_as_float(np.atleast_3d(image))
-        float_dtype = _supported_float_type(image.dtype)
-        image = image.astype(float_dtype, copy=False)
-        print("Heee")
-        if image.ndim > 3:
-            raise ValueError("only 2D color images are supported")
+        self.image = image
+        self.segments = segments
+        self.intercept = {}
+        self.local_exp = {}
+        self.local_pred = {}
+        self.score = {}
 
-        # move channels to last position as expected by the Cython code
-        image = np.moveaxis(image, source=channel_axis, destination=-1)
+    def get_image_and_mask(self, label, positive_only=True, negative_only=False, hide_rest=False,
+                           num_features=5, min_weight=0.):
+        """Init function.
+        Args:
+            label: label to explain
+            positive_only: if True, only take superpixels that positively contribute to
+                the prediction of the label.
+            negative_only: if True, only take superpixels that negatively contribute to
+                the prediction of the label. If false, and so is positive_only, then both
+                negativey and positively contributions will be taken.
+                Both can't be True at the same time
+            hide_rest: if True, make the non-explanation part of the return
+                image gray
+            num_features: number of superpixels to include in explanation
+            min_weight: minimum weight of the superpixels to include in explanation
+        Returns:
+            (image, mask), where image is a 3d numpy array and mask is a 2d
+            numpy array that can be used with
+            skimage.segmentation.mark_boundaries
+        """
+        if label not in self.local_exp:
+            raise KeyError('Label not in explanation')
+        if positive_only & negative_only:
+            raise ValueError("Positive_only and negative_only cannot be true at the same time.")
+        segments = self.segments
+        image = self.image
+        exp = self.local_exp[label]
+        mask = np.zeros(segments.shape, segments.dtype)
+        if hide_rest:
+            temp = np.zeros(self.image.shape)
+        else:
+            temp = self.image.copy()
+        if positive_only:
+            fs = [x[0] for x in exp
+                  if x[1] > 0 and x[1] > min_weight][:num_features]
+        if negative_only:
+            fs = [x[0] for x in exp
+                  if x[1] < 0 and abs(x[1]) > min_weight][:num_features]
+        if positive_only or negative_only:
+            for f in fs:
+                temp[segments == f] = image[segments == f].copy()
+                mask[segments == f] = 1
+            return temp, mask
+        else:
+            for f, w in exp[:num_features]:
+                if np.abs(w) < min_weight:
+                    continue
+                c = 0 if w < 0 else 1
+                mask[segments == f] = -1 if w < 0 else 1
+                temp[segments == f] = image[segments == f].copy()
+                temp[segments == f, c] = np.max(image)
+            return temp, mask
+    
+    
 
-        if convert2lab:
-            if image.shape[-1] != 3:
-                ValueError("Only RGB images can be converted to Lab space.")
-            image = rgb2lab(image)
+    
+def quickshift(image, ratio=0.2, kernel_size=5, max_dist=10,return_tree=False, sigma=0, 
+               convert2lab=True, random_seed=42,*,channel_axis=-1):
+    """Segments image using quickshift clustering in Color-(x,y) space.
+    Produces an oversegmentation of the image using the quickshift mode-seeking
+    algorithm.
+    Parameters
+    ----------
+    image : (width, height, channels) ndarray
+        Input image. The axis corresponding to color channels can be specified
+        via the `channel_axis` argument.
+    ratio : float, optional, between 0 and 1
+        Balances color-space proximity and image-space proximity.
+        Higher values give more weight to color-space.
+    kernel_size : float, optional
+        Width of Gaussian kernel used in smoothing the
+        sample density. Higher means fewer clusters.
+    max_dist : float, optional
+        Cut-off point for data distances.
+        Higher means fewer clusters.
+    return_tree : bool, optional
+        Whether to return the full segmentation hierarchy tree and distances.
+    sigma : float, optional
+        Width for Gaussian smoothing as preprocessing. Zero means no smoothing.
+    convert2lab : bool, optional
+        Whether the input should be converted to Lab colorspace prior to
+        segmentation. For this purpose, the input is assumed to be RGB.
+    random_seed : int, optional
+        Random seed used for breaking ties.
+    channel_axis : int, optional
+        The axis of `image` corresponding to color channels. Defaults to the
+        last axis.
+    Returns
+    -------
+    segment_mask : (width, height) ndarray
+        Integer mask indicating segment labels.
+    Notes
+    -----
+    The authors advocate to convert the image to Lab color space prior to
+    segmentation, though this is not strictly necessary. For this to work, the
+    image must be given in RGB format.
+    References
+    ----------
+    .. [1] Quick shift and kernel methods for mode seeking,
+           Vedaldi, A. and Soatto, S.
+           European Conference on Computer Vision, 2008
+    """
 
-        if kernel_size < 1:
-            raise ValueError("`kernel_size` should be >= 1.")
+    image = img_as_float(np.atleast_3d(image))
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
+    image = image[0]
 
-        image = gaussian(image, [sigma, sigma, 0], mode='reflect', channel_axis=-1)
-        image = np.ascontiguousarray(image * ratio)
+    if image.ndim > 3:
+        raise ValueError("only 2D color images are supported")
 
-        segment_mask = _quickshift_cython(
-            image, kernel_size=kernel_size, max_dist=max_dist,
-            return_tree=return_tree, random_seed=random_seed)
-        return segment_mask
+    # move channels to last position as expected by the Cython code
+    image = np.moveaxis(image, source=channel_axis, destination=-1)
+
+    if convert2lab:
+        if image.shape[-1] != 3:
+            ValueError("Only RGB images can be converted to Lab space.")
+        image = rgb2lab(image)
+
+    if kernel_size < 1:
+        raise ValueError("`kernel_size` should be >= 1.")
+
+    image = gaussian(image, [sigma, sigma, 0], mode='reflect', channel_axis=-1)
+    image = np.ascontiguousarray(image * ratio)
+
+    segment_mask = _quickshift_cython(
+        image, kernel_size=kernel_size, max_dist=max_dist,
+        return_tree=return_tree, random_seed=random_seed)
+    return segment_mask
