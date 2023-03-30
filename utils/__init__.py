@@ -107,7 +107,7 @@ def plot_image_grid(
             # TODO controlled color mapping wrt all grid entries,
             # or individually. make input param
             if grid[r][c] is not None:
-                ax.imshow(grid[r][c], interpolation="none")
+                ax.imshow(grid[r][c], interpolation="none",cmap="jet")
             else:
                 for spine in plt.gca().spines.values():
                     spine.set_visible(False)
