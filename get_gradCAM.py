@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 from numpy import array
 import rasterio as rio
-from rasterio.plot import reshape_as_image
+from rasterio.plot import reshape_as_image,reshape_as_raster
 import geopandas as gpd
 from tensorflow.keras.preprocessing import image
 from sklearn.model_selection import train_test_split
@@ -12,7 +12,8 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import datasets, layers, models
 import matplotlib.pyplot as plt
 from datetime import datetime
-
+import matplotlib.cm as cm
+from tensorflow import keras
 class get_gradCAM:
     
     def __init__(self):
@@ -46,19 +47,27 @@ class get_gradCAM:
             if len(query) != 1:
                 continue
             
-            self.x.append(patch_src_read)
-            self.y.append(float(query))
-            patch_src.close()
             count +=1
             if count >= 2:
                 break
-            heatmap = self.run_gradCAM(patch_src_read)
+            jet_heatmap = self.run_gradCAM(patch_src_read)
             out_meta = patch_src.meta.copy()
-            out_meta.update(count=12)
-            out_meta.update({"driver": "GTiff"})
+            # out_meta.update({"driver": "GTiff",
+            #                 "count":3,
+            #                 "dtype": 'float32'})
+            out_meta.update(
+                dtype=rio.uint8,
+                count=3,
+                )
+            print(out_meta)
+            jet_heatmap_raster = reshape_as_raster(jet_heatmap)
+            print(jet_heatmap_raster.shape)
             out_file = self.output_path+f_name+".tif"
-            with rio.open(out_file, 'w', **meta) as outds:
-                outds.write(heatmap)
+            with rio.open(out_file, 'w', **out_meta) as outds:
+                outds.write(jet_heatmap_raster)
+            patch_src.close()
+
+
     
     def run_gradCAM(self,patch_src_read):
         img_array = image.img_to_array(patch_src_read)
@@ -66,10 +75,26 @@ class get_gradCAM:
         # Generate class activation heatmap
         last_conv_layer_name = "conv2d_2"
         heatmap = self.make_gradcam_heatmap(img_batch, self.model, last_conv_layer_name)
-        return heatmap
+        jet_heatmap = self.get_rescaled_heatmap(heatmap)
+        return jet_heatmap
     
     
     
+    def get_rescaled_heatmap(self,heatmap):
+        # save_and_display_gradcam(img_path, heatmap)
+        # Rescale heatmap to a range 0-255
+        heatmap = np.uint8(255 * heatmap)
+        jet = cm.get_cmap("jet")
+
+        # Use RGB values of the colormap
+        jet_colors = jet(np.arange(256))[:, :3]
+        jet_heatmap = jet_colors[heatmap]
+        # Create an image with RGB colorized heatmap
+        jet_heatmap = keras.preprocessing.image.array_to_img(jet_heatmap)
+        jet_heatmap = jet_heatmap.resize((256,256))
+        jet_heatmap = keras.preprocessing.image.img_to_array(jet_heatmap)
+        return jet_heatmap
+        
     def make_gradcam_heatmap(self,img_array, model, last_conv_layer_name, pred_index=None):
         # First, we create a model that maps the input image to the activations
         # of the last conv layer as well as the output predictions
@@ -92,18 +117,19 @@ class get_gradCAM:
         # This is a vector where each entry is the mean intensity of the gradient
         # over a specific feature map channel
         pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-        print(grads.shape)
+        
         # We multiply each channel in the feature map array
         # by "how important this channel is" with regard to the top predicted class
         # then sum all the channels to obtain the heatmap class activation
         last_conv_layer_output = last_conv_layer_output[0]
         heatmap = last_conv_layer_output @ pooled_grads[..., tf.newaxis]
-        print(heatmap.shape)
+        
         heatmap = tf.squeeze(heatmap)
 
         # For visualization purpose, we will also normalize the heatmap between 0 & 1
         heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
         return heatmap.numpy()
+        
                     
     
     def run(self):
