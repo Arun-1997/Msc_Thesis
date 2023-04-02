@@ -18,12 +18,12 @@ class get_gradCAM:
     
     def __init__(self):
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.training_path = "Input/sentinel/patches_256/Iowa_July_1_31/train/"
+        self.training_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
         self.target_file_path = "Input/Target_256/concat/Iowa.shp"
         # self.model_id = "aanaxs4g" # With mask
         self.model_id = "ezb3xkqf" # No Mask
         self.patch_dim = (256, 256, 12)
-        self.output_path = "Output/saliency_maps/gradCAM/train/"
+        self.output_path = "Output/saliency_maps/gradCAM/test/"
     
     
     def read_training(self):
@@ -48,8 +48,8 @@ class get_gradCAM:
                 continue
             
             count +=1
-            if count >= 2:
-                break
+            # if count >= 2:
+            #     break
             jet_heatmap = self.run_gradCAM(patch_src_read)
             out_meta = patch_src.meta.copy()
             # out_meta.update({"driver": "GTiff",
@@ -59,9 +59,10 @@ class get_gradCAM:
                 dtype=rio.uint8,
                 count=3,
                 )
-            print(out_meta)
+            # print(out_meta)
             jet_heatmap_raster = reshape_as_raster(jet_heatmap)
-            print(jet_heatmap_raster.shape)
+            # print(jet_heatmap_raster.shape)
+            print(f_name)
             out_file = self.output_path+f_name+".tif"
             with rio.open(out_file, 'w', **out_meta) as outds:
                 outds.write(jet_heatmap_raster)
