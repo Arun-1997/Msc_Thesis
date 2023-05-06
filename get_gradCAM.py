@@ -23,7 +23,7 @@ class get_gradCAM:
         # self.model_id = "aanaxs4g" # With mask
         self.model_id = "ezb3xkqf" # No Mask
         self.patch_dim = (256, 256, 12)
-        self.output_path = "Output/saliency_maps/gradCAM/test/"
+        self.output_path = "Output/saliency_maps/gradCAM_sent/test/"
     
     
     def read_training(self):
@@ -52,21 +52,22 @@ class get_gradCAM:
             #     break
             jet_heatmap = self.run_gradCAM(patch_src_read)
             out_meta = patch_src.meta.copy()
-            # out_meta.update({"driver": "GTiff",
-            #                 "count":3,
-            #                 "dtype": 'float32'})
             out_meta.update(
-                dtype=rio.uint8,
-                count=3,
+                dtype=rio.float32,
+                count=15,
                 )
-            # print(out_meta)
-            jet_heatmap_raster = reshape_as_raster(jet_heatmap)
+            
+            jet_heatmap = jet_heatmap/255
+            sent_jet_heatmap = np.dstack((patch_src_read,jet_heatmap))
+            jet_heatmap_raster = reshape_as_raster(sent_jet_heatmap)
             # print(jet_heatmap_raster.shape)
             print(f_name)
             out_file = self.output_path+f_name+".tif"
             with rio.open(out_file, 'w', **out_meta) as outds:
                 outds.write(jet_heatmap_raster)
             patch_src.close()
+        
+        print(f"Count : {count}") 
 
 
     

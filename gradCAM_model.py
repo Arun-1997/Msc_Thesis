@@ -28,9 +28,9 @@ class CNN_model:
     def __init__(self):
         
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.training_path = "Output/saliency_maps/gradCAM/train/"
+        self.training_path = "Output/saliency_maps/gradCAM_sent/train/"
         self.target_file_path = "Input/Target_256/concat/Iowa.shp"
-        self.patch_dim = (256, 256,3)
+        self.patch_dim = (256, 256,15)
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
@@ -63,7 +63,7 @@ class CNN_model:
 
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            patch_src_read = reshape_as_image(patch_src.read()[0:12]) ## Change the index here to add or remove the mask layer
+            patch_src_read = reshape_as_image(patch_src.read()) ## Change the index here to add or remove the mask layer
             if patch_src_read.shape != self.patch_dim:
                 self.ignore_patch_list.append(f_name)
                 # print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
@@ -78,13 +78,13 @@ class CNN_model:
                 # print("patch has no target value, skipping patch : {}".format(f_name))
                 continue
             
-            patch_src_read = patch_src_read/255
+            # patch_src_read = patch_src_read/255
             self.x.append(patch_src_read)
             self.y.append(float(query))
             patch_src.close()
             count +=1
-            # if count >= 2:
-            #     break
+            if count >= 2000:
+                break
         
 
         # self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
