@@ -51,31 +51,37 @@ class saliency_map_analysis:
             if len(query) != 1:
                 continue
             
-            saliency = self.get_saliency_band(patch_src_read,file,output_path)
-            ndvi = self.get_ndvi(patch_src_read,output_path,patch_src.meta)
-            wdrvi = self.get_wdrvi(patch_src_read,output_path,patch_src.meta)
-            savi = self.get_savi(patch_src_read,output_path,patch_src.meta)
-            ndmi = self.get_ndmi(patch_src_read,output_path,patch_src.meta)
-            evi = self.get_evi(patch_src_read,output_path,patch_src.meta)
+            self.saliency = self.get_saliency_band(patch_src_read,file,output_path)
+            self.ndvi = self.get_ndvi(patch_src_read,output_path,patch_src.meta)
+            self.wdrvi = self.get_wdrvi(patch_src_read,output_path,patch_src.meta)
+            self.savi = self.get_savi(patch_src_read,output_path,patch_src.meta)
+            self.ndmi = self.get_ndmi(patch_src_read,output_path,patch_src.meta)
+            self.evi = self.get_evi(patch_src_read,output_path,patch_src.meta)
+            # ccci = self.get_ccci(patch_src_read,output_path,patch_src.meta)
             # ndvi_rgb = self.grayscale_to_rgb(ndvi)
             
             if self.has_mask:
                 mask = self.plot_mask(patch_src_read,output_path)                
                 self.clip_to_mask(mask,ndvi,evi,output_path)
-
-            saliency_array = saliency.flatten()
-            ndvi_array = ndvi.flatten()
-            evi_array = evi.flatten()
-            ndmi_array = ndmi.flatten()
             
-            plt.scatter(evi_array,ndmi_array)
-            plt.title("EVI - NDMI scatter plot")
-            plt.savefig(os.path.join(output_path,"evi_ndmi_scatter.png"))
-            plt.close()
-            ndvi_diff = np.absolute(ndvi - saliency)
+            
+            # saliency_array = saliency.flatten()
+            # ndvi_array = ndvi.flatten()
+            # evi_array = evi.flatten()
+            # ndmi_array = ndmi.flatten()
+            
+            # plt.scatter(evi_array,ndmi_array)
+            # plt.title("EVI - NDMI scatter plot")
+            # plt.savefig(os.path.join(output_path,"evi_ndmi_scatter.png"))
+            # plt.close()
+            
+            self.get_correlation_plot(self.evi,self.ndmi,output_path,x_label="evi",y_label="ndmi")
+            self.get_correlation_plot(self.ndmi,self.wdrvi,output_path,x_label="ndmi",y_label="wdrvi")
+
+            ndvi_diff = np.absolute(self.ndvi - self.saliency)
             
             # square = np.square(ndvi - saliency)
-            rmse = np.sqrt(np.average(np.square(ndvi-saliency)))
+            rmse = np.sqrt(np.average(np.square(self.ndvi-self.saliency)))
             # print("RMSE : ",rmse)
             # plt.imshow(ndvi_diff)
             ax = plt.subplot()
@@ -87,6 +93,24 @@ class saliency_map_analysis:
             plt.close()
             count +=1
             break
+
+    def get_correlation_plot(self, x, y, output_path, x_label="x_label",y_label="y_label"):
+                
+        x = x.flatten()
+        y = y.flatten()
+        plt.scatter(x, y, c='crimson',s=2)
+        plt.yscale('log')
+        plt.xscale('log')
+
+        p1_0 = max(max(x), max(y))
+        p2_0 = min(min(x), min(y))
+        plt.plot([p1_0, p2_0], [p1_0, p2_0], 'b-')
+        plt.xlabel(x_label, fontsize=8)
+        plt.ylabel(y_label, fontsize=8)
+        plt.axis('equal')
+        plt.savefig(os.path.join(output_path,x_label+"_"+y_label+"_corr.png"))
+        plt.close()
+    
     def clip_to_mask(self,mask,ndvi,evi,output_path):
         # s2_fname = "..."
         # lc_fname = "..."
@@ -130,7 +154,11 @@ class saliency_map_analysis:
         plt.hist(gray)
         plt.savefig(os.path.join(output_path,"saliency_map_hist.png"))
         plt.close()
-        im = plt.imshow(gray, cmap=plt.get_cmap('Reds'), vmin=0, vmax=1)
+        
+        ax = plt.subplot()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        im = ax.imshow(gray, cmap=plt.get_cmap('gray'))
         plt.title("Saliency Map")
 
         plt.colorbar(im, cax=cax)
@@ -293,6 +321,41 @@ class saliency_map_analysis:
         plt.close()
         return savi
     
+    
+    def get_ccci(self,patch_src_read,output_path,patch_meta):
+        
+        # CCCI - Canopy Chlorophyll Content Index
+        ccci = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        bandNIR = patch_src_read[:,:,7]
+        bandRedEdge = patch_src_read[:,:,4]
+        bandRed = patch_src_read[:,:,3]
+        
+        ccci = ((bandNIR.astype(float)-bandRedEdge.astype(float))/(bandNIR.astype(float)+bandRedEdge.astype(float)))/((bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float)))
+        plt.hist(ccci)
+        plt.savefig(os.path.join(output_path,"ccci_hist.png"))
+        plt.close()
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=1,
+            compress='lzw')
+        output_path_ccci = os.path.join(output_path,"ccci.tif")
+        with rio.open(output_path_ccci, 'w', **kwargs) as dst:
+            dst.write_band(1, ccci.astype(rio.float32))
+        # show(ndvi,cmap="jet")
+      
+        ax = plt.subplot()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        
+        im = ax.imshow(ccci,cmap="jet")
+        plt.title("Chloro Content Canopy Index")
+
+        plt.colorbar(im, cax=cax)
+        plt.savefig(os.path.join(output_path,"ccci_plot.png"))
+        plt.close()
+        return ccci
+    
   
     def get_evi(self,patch_src_read,output_path,patch_meta):
         
@@ -332,6 +395,9 @@ class saliency_map_analysis:
         plt.close()
         return evi 
 
+    
+    def upscale_layer(self,layer,scale_no=16):
+        pass
     
     def run(self):
         self.read_input()
