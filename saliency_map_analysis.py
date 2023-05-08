@@ -53,6 +53,8 @@ class saliency_map_analysis:
             
             saliency = self.get_saliency_band(patch_src_read,file,output_path)
             ndvi = self.get_ndvi(patch_src_read,output_path,patch_src.meta)
+            wdrvi = self.get_wdrvi(patch_src_read,output_path,patch_src.meta)
+            savi = self.get_savi(patch_src_read,output_path,patch_src.meta)
             ndmi = self.get_ndmi(patch_src_read,output_path,patch_src.meta)
             evi = self.get_evi(patch_src_read,output_path,patch_src.meta)
             # ndvi_rgb = self.grayscale_to_rgb(ndvi)
@@ -67,7 +69,7 @@ class saliency_map_analysis:
             ndmi_array = ndmi.flatten()
             
             plt.scatter(evi_array,ndmi_array)
-            plt.title("EVI - NDMIs scatter plot")
+            plt.title("EVI - NDMI scatter plot")
             plt.savefig(os.path.join(output_path,"evi_ndmi_scatter.png"))
             plt.close()
             ndvi_diff = np.absolute(ndvi - saliency)
@@ -195,8 +197,7 @@ class saliency_map_analysis:
         bandRed = patch_src_read[:,:,3]
         
         ndvi = (bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float))
-        
-        # EVI = 2.5 * (B08 - B04) / ((B08 + 6.0 * B04 - 7.5 * B02) + 1.0)
+        # wdrvi = (0.1 * B08 - B04) / (0.1 * B08 + B04);
         # scaler = MinMaxScaler()
         # scaler.fit(ndvi_original)
         # ndvi = scaler.transform(ndvi_original)
@@ -225,6 +226,74 @@ class saliency_map_analysis:
         plt.close()
         return ndvi 
 
+    def get_wdrvi(self,patch_src_read,output_path,patch_meta):
+        
+        wdrvi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        bandNIR = patch_src_read[:,:,7]
+        bandRed = patch_src_read[:,:,3]
+        
+        wdrvi = (0.1*bandNIR.astype(float)-bandRed.astype(float))/(0.1*bandNIR.astype(float)+bandRed.astype(float))
+        # wdrvi = (0.1 * B08 - B04) / (0.1 * B08 + B04);
+        plt.hist(wdrvi)
+        plt.savefig(os.path.join(output_path,"wdrvi_hist.png"))
+        plt.close()
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=1,
+            compress='lzw')
+        output_path_wdrvi = os.path.join(output_path,"wdrvi.tif")
+        with rio.open(output_path_wdrvi, 'w', **kwargs) as dst:
+            dst.write_band(1, wdrvi.astype(rio.float32))
+        # show(ndvi,cmap="jet")
+      
+        ax = plt.subplot()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        
+        im = ax.imshow(wdrvi,cmap="jet")
+        plt.title("WDRVI")
+
+        plt.colorbar(im, cax=cax)
+        plt.savefig(os.path.join(output_path,"wdrvi_plot.png"))
+        plt.close()
+        return wdrvi
+    
+    def get_savi(self,patch_src_read,output_path,patch_meta):
+        
+        savi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        bandNIR = patch_src_read[:,:,7]
+        bandRed = patch_src_read[:,:,3]
+        L = 0.5
+        savi = ((bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float)+L))*(1.0+L)
+        # L = soil brightness correction factor could range from (0 -1)
+        # index = (B08 - B04) / (B08 + B04 + L) * (1.0 + L); // calculate savi index
+        plt.hist(savi)
+        plt.savefig(os.path.join(output_path,"savi_hist.png"))
+        plt.close()
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=1,
+            compress='lzw')
+        output_path_savi = os.path.join(output_path,"savi.tif")
+        with rio.open(output_path_savi, 'w', **kwargs) as dst:
+            dst.write_band(1, savi.astype(rio.float32))
+        # show(ndvi,cmap="jet")
+      
+        ax = plt.subplot()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        
+        im = ax.imshow(savi,cmap="jet")
+        plt.title("SAVI")
+
+        plt.colorbar(im, cax=cax)
+        plt.savefig(os.path.join(output_path,"savi_plot.png"))
+        plt.close()
+        return savi
+    
+  
     def get_evi(self,patch_src_read,output_path,patch_meta):
         
         evi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
