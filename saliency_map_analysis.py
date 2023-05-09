@@ -132,7 +132,25 @@ class saliency_map_analysis:
     
     def rgb2gray(self,rgb):
         return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
+     
+    def getIfromRGB(self,rgb):
+        red = rgb[0]
+        green = rgb[1]
+        blue = rgb[2]
+        RGBint = (red<<16) + (green<<8) + blue
+        return RGBint
+    
+    def rgb2Int(self,img_array):
         
+        img_arr = img_array.reshape(img_array.shape[0]*img_array.shape[1],3)
+        img_arr_int = list()
+        for i in img_arr:
+            img_arr_int.append(self.getIfromRGB(i))
+        img_arr_int = np.array(img_arr_int)
+        img_arr_int = (img_arr_int - img_arr_int.min())/img_arr_int.max()
+        img_array_int_res = img_arr_int.reshape(256,256)
+        return img_array_int_res
+    
     def get_saliency_band(self, patch_src_read,file,output_path):
         
         saliency_bands = patch_src_read[:,:,12:15]
@@ -150,10 +168,15 @@ class saliency_map_analysis:
         plt.close()
         # img = Image.open().convert('L')
         # img.save(output_file_gray)
-        gray = self.rgb2gray(saliency_bands)
+        gray = self.rgb2gray(saliency_bands)        
+        saliency_int = self.rgb2Int(saliency_bands)
         plt.hist(gray)
         plt.savefig(os.path.join(output_path,"saliency_map_hist.png"))
         plt.close()
+        plt.hist(saliency_int)
+        plt.savefig(os.path.join(output_path,"saliency_int_hist.png"))
+        plt.close()
+
         
         ax = plt.subplot()
         divider = make_axes_locatable(ax)
@@ -164,21 +187,32 @@ class saliency_map_analysis:
         plt.colorbar(im, cax=cax)
         plt.savefig(output_file_gray)
         plt.close()
-        return gray
+        
+        ax = plt.subplot()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        im = ax.imshow(saliency_int, cmap=plt.get_cmap('hsv'))
+        plt.title("Saliency Map Int")
+
+        plt.colorbar(im, cax=cax)
+        plt.savefig(os.path.join(output_path,"saliency_1band.png"))
+        plt.close()
+        
+        return saliency_int
     
     
     def get_ndmi(self,patch_src_read,output_path,patch_meta):
         # NDMI = (B08 - B11) / (B08 + B11)
-        ndmi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        ndmi_original = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
         bandNIR = patch_src_read[:,:,7]
         bandSWIR = patch_src_read[:,:,10]
         
-        ndmi = (bandNIR.astype(float)-bandSWIR.astype(float))/(bandNIR.astype(float)+bandSWIR.astype(float))
+        ndmi_original = (bandNIR.astype(float)-bandSWIR.astype(float))/(bandNIR.astype(float)+bandSWIR.astype(float))
         # print("NDMI min :",ndmi.min())
         # print("NDMI max :",ndmi.max())
-        # scaler = MinMaxScaler()
-        # scaler.fit(ndvi_original)
-        # ndvi = scaler.transform(ndvi_original)
+        scaler_ndmi = MinMaxScaler()
+        scaler_ndmi.fit(ndmi_original)
+        ndmi = scaler_ndmi.transform(ndmi_original)
         plt.hist(ndmi)
         plt.savefig(os.path.join(output_path,"ndmi_hist.png"))
         plt.close()
@@ -220,15 +254,15 @@ class saliency_map_analysis:
         
     def get_ndvi(self,patch_src_read,output_path,patch_meta):
         
-        ndvi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        ndvi_original = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
         bandNIR = patch_src_read[:,:,7]
         bandRed = patch_src_read[:,:,3]
         
-        ndvi = (bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float))
+        ndvi_original = (bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float))
         # wdrvi = (0.1 * B08 - B04) / (0.1 * B08 + B04);
-        # scaler = MinMaxScaler()
-        # scaler.fit(ndvi_original)
-        # ndvi = scaler.transform(ndvi_original)
+        scaler = MinMaxScaler()
+        scaler.fit(ndvi_original)
+        ndvi = scaler.transform(ndvi_original)
         plt.hist(ndvi)
         plt.savefig(os.path.join(output_path,"ndvi_hist.png"))
         plt.close()
@@ -256,12 +290,17 @@ class saliency_map_analysis:
 
     def get_wdrvi(self,patch_src_read,output_path,patch_meta):
         
-        wdrvi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        wdrvi_original = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
         bandNIR = patch_src_read[:,:,7]
         bandRed = patch_src_read[:,:,3]
         
-        wdrvi = (0.1*bandNIR.astype(float)-bandRed.astype(float))/(0.1*bandNIR.astype(float)+bandRed.astype(float))
+        wdrvi_original = (0.1*bandNIR.astype(float)-bandRed.astype(float))/(0.1*bandNIR.astype(float)+bandRed.astype(float))
         # wdrvi = (0.1 * B08 - B04) / (0.1 * B08 + B04);
+        
+        scaler_wdrvi = MinMaxScaler()
+        scaler_wdrvi.fit(wdrvi_original)
+        wdrvi = scaler_wdrvi.transform(wdrvi_original)
+
         plt.hist(wdrvi)
         plt.savefig(os.path.join(output_path,"wdrvi_hist.png"))
         plt.close()
@@ -289,13 +328,17 @@ class saliency_map_analysis:
     
     def get_savi(self,patch_src_read,output_path,patch_meta):
         
-        savi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        savi_original = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
         bandNIR = patch_src_read[:,:,7]
         bandRed = patch_src_read[:,:,3]
         L = 0.5
-        savi = ((bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float)+L))*(1.0+L)
+        savi_original = ((bandNIR.astype(float)-bandRed.astype(float))/(bandNIR.astype(float)+bandRed.astype(float)+L))*(1.0+L)
         # L = soil brightness correction factor could range from (0 -1)
         # index = (B08 - B04) / (B08 + B04 + L) * (1.0 + L); // calculate savi index
+        
+        scaler_savi = MinMaxScaler()
+        scaler_savi.fit(savi_original)
+        savi = scaler_savi.transform(savi_original)
         plt.hist(savi)
         plt.savefig(os.path.join(output_path,"savi_hist.png"))
         plt.close()
@@ -359,7 +402,7 @@ class saliency_map_analysis:
   
     def get_evi(self,patch_src_read,output_path,patch_meta):
         
-        evi = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
+        evi_original = np.zeros(patch_src_read[:,:,0].shape, dtype=rio.float32)
         bandNIR = patch_src_read[:,:,7]
         bandRed = patch_src_read[:,:,3]
         bandBlue = patch_src_read[:,:,1]
@@ -367,9 +410,9 @@ class saliency_map_analysis:
         evi = 2.5 * (bandNIR.astype(float)-bandRed.astype(float))/((bandNIR.astype(float)+6.0 * bandRed.astype(float) - 7.5*bandBlue.astype(float)) + 1.0)
         
         # EVI = 2.5 * (B08 - B04) / ((B08 + 6.0 * B04 - 7.5 * B02) + 1.0)
-        # scaler1 = MinMaxScaler()
-        # scaler1.fit(evi_original)
-        # evi = scaler1.transform(evi_original)
+        scaler1 = MinMaxScaler()
+        scaler1.fit(evi_original)
+        evi = scaler1.transform(evi_original)
         plt.hist(evi)
         plt.savefig(os.path.join(output_path,"evi_hist.png"))
         plt.close()
