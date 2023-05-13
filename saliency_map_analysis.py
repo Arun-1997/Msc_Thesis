@@ -7,6 +7,7 @@ from PIL import Image
 import matplotlib.image as mpimg
 from rasterio.plot import reshape_as_image,reshape_as_raster,show
 import geopandas as gpd
+from skimage.measure import block_reduce
 from sklearn.preprocessing import MinMaxScaler
 # from tensorflow.keras.preprocessing import image
 from sklearn.model_selection import train_test_split
@@ -24,12 +25,14 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 class saliency_map_analysis:
     
     def __init__(self):
-        self.input = "Output/saliency_maps/gradCAM_nomask_sent/test/"
+        self.input = "Output/saliency_maps/gradCAM_mask_sent/test/"
         self.target_file_path = "Input/Target_256/concat/Iowa.shp"
-        self.patch_dim = (256, 256, 15)
-        self.output = "Output/saliency_maps_analysis/nomask"
+        self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
+        self.patch_dim = (256, 256, 16)
+        self.output = "Output/saliency_maps_analysis/mask"
         self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
-    
+        self.clip2cdl = True
+        
     def read_input(self):
         input_file_list = glob.glob(os.path.join(self.input,"*.tif"))
         target_gdf = gpd.read_file(self.target_file_path)
@@ -38,20 +41,26 @@ class saliency_map_analysis:
             
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
+            
+            
             output_path = os.path.join(self.output,f_name)
             os.makedirs(output_path, exist_ok=True)
-            patch_src_read = reshape_as_image(patch_src.read())
+            self.cdl = self.get_cdl_layer(f_name,output_path,patch_src.meta)
+            if self.clip2cdl:
+                patch_src_read = reshape_as_image(patch_src.read() * self.cdl)
+            else:
+                patch_src_read = reshape_as_image(patch_src.read())
             if patch_src_read.shape != self.patch_dim:
                 continue
                 
-            if np.isnan(patch_src_read).any():
-                continue
+            # if np.isnan(patch_src_read).any():
+            #     continue
             
             query = target_gdf.query(f"patch_name == '{f_name}'")["ykg_by_e7"]
             if len(query) != 1:
                 continue
             
-            self.saliency = self.get_saliency_band(patch_src_read,file,output_path)
+            self.saliency = self.get_saliency_band(patch_src_read,file,output_path,patch_src.meta)
             self.ndvi = self.get_ndvi(patch_src_read,output_path,patch_src.meta)
             self.wdrvi = self.get_wdrvi(patch_src_read,output_path,patch_src.meta)
             self.savi = self.get_savi(patch_src_read,output_path,patch_src.meta)
@@ -77,7 +86,12 @@ class saliency_map_analysis:
             
             self.get_correlation_plot(self.evi,self.ndmi,output_path,x_label="evi",y_label="ndmi")
             self.get_correlation_plot(self.ndmi,self.wdrvi,output_path,x_label="ndmi",y_label="wdrvi")
+            self.get_corr_with_saliency(self.saliency,self.ndmi,output_path,x_label="saliency",y_label="ndmi")
+            self.get_corr_with_saliency(self.saliency,self.evi,output_path,x_label="saliency",y_label="evi")
+            self.get_corr_with_saliency(self.saliency,self.wdrvi,output_path,x_label="saliency",y_label="wdrvi")
+            self.get_corr_with_saliency(self.saliency,self.savi,output_path,x_label="saliency",y_label="savi")
 
+            
             ndvi_diff = np.absolute(self.ndvi - self.saliency)
             
             # square = np.square(ndvi - saliency)
@@ -94,6 +108,47 @@ class saliency_map_analysis:
             count +=1
             break
 
+     
+    def get_cdl_layer(self,f_name,output_path,patch_meta):
+        file = os.path.join(self.mask_layer_path,f_name+".tif")
+        cdl_file = rio.open(file).read()
+        cdl_layer = cdl_file[12,:,:]
+        # print(cdl_file.shape)
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=1,
+            compress='lzw')
+        output_path_cdl = os.path.join(output_path,"cdl_layer.tif")
+        with rio.open(output_path_cdl, 'w', **kwargs) as dst:
+            dst.write_band(1,cdl_layer.astype(rio.int32))
+        
+        plt.imshow(cdl_layer)
+        plt.savefig(os.path.join(output_path,"cdl_plot.png"))
+        plt.close()
+        return cdl_layer
+        
+    def get_corr_with_saliency(self, x_inp, y_inp, output_path, x_label="x_label",y_label="y_label"):
+        
+        x_reduced = block_reduce(x_inp, block_size=(8,8), func=np.mean, cval=np.mean(x_inp))
+        y_reduced = block_reduce(y_inp, block_size=(8,8), func=np.mean, cval=np.mean(y_inp))
+        
+        x = x_reduced.flatten()
+        y = y_reduced.flatten()
+        plt.scatter(x, y, c='crimson',s=2)
+        # plt.yscale('log')
+        # plt.xscale('log')
+
+        p1_0 = max(max(x), max(y))
+        p2_0 = min(min(x), min(y))
+        plt.plot([p1_0, p2_0], [p1_0, p2_0], 'b-')
+        plt.xlabel(x_label, fontsize=8)
+        plt.ylabel(y_label, fontsize=8)
+        plt.axis('equal')
+        plt.savefig(os.path.join(output_path,x_label+"_"+y_label+"_corr.png"))
+        plt.close()
+        
+        
     def get_correlation_plot(self, x, y, output_path, x_label="x_label",y_label="y_label"):
                 
         x = x.flatten()
@@ -134,9 +189,10 @@ class saliency_map_analysis:
         return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
      
     def getIfromRGB(self,rgb):
-        red = rgb[0]
-        green = rgb[1]
-        blue = rgb[2]
+        red = int(rgb[0]*255)
+        green = int(rgb[1]*255)
+        blue = int(rgb[2]*255)
+        
         RGBint = (red<<16) + (green<<8) + blue
         return RGBint
     
@@ -151,7 +207,7 @@ class saliency_map_analysis:
         img_array_int_res = img_arr_int.reshape(256,256)
         return img_array_int_res
     
-    def get_saliency_band(self, patch_src_read,file,output_path):
+    def get_saliency_band(self, patch_src_read,file,output_path,patch_meta):
         
         saliency_bands = patch_src_read[:,:,12:15]
         
@@ -166,6 +222,17 @@ class saliency_map_analysis:
         plt.colorbar(im, cax=cax)
         plt.savefig(output_file_rgb)
         plt.close()
+        saliency_bands_ras = reshape_as_raster(saliency_bands)
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=3,
+            compress='lzw')
+        output_path_ndvi = os.path.join(output_path,"saliency.tif")
+        with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
+            dst.write(saliency_bands_ras.astype(rio.float32))
+        
+        
         # img = Image.open().convert('L')
         # img.save(output_file_gray)
         gray = self.rgb2gray(saliency_bands)        
@@ -191,12 +258,21 @@ class saliency_map_analysis:
         ax = plt.subplot()
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.05)
-        im = ax.imshow(saliency_int, cmap=plt.get_cmap('hsv'))
+        im = ax.imshow(saliency_int, cmap=plt.get_cmap('jet'))
         plt.title("Saliency Map Int")
 
         plt.colorbar(im, cax=cax)
         plt.savefig(os.path.join(output_path,"saliency_1band.png"))
         plt.close()
+        
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=1,
+            compress='lzw')
+        output_path_ndvi = os.path.join(output_path,"saliency_int.tif")
+        with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
+            dst.write_band(1,saliency_int.astype(rio.float32))
         
         return saliency_int
     
@@ -407,7 +483,7 @@ class saliency_map_analysis:
         bandRed = patch_src_read[:,:,3]
         bandBlue = patch_src_read[:,:,1]
         
-        evi = 2.5 * (bandNIR.astype(float)-bandRed.astype(float))/((bandNIR.astype(float)+6.0 * bandRed.astype(float) - 7.5*bandBlue.astype(float)) + 1.0)
+        evi_original = 2.5 * (bandNIR.astype(float)-bandRed.astype(float))/((bandNIR.astype(float)+6.0 * bandRed.astype(float) - 7.5*bandBlue.astype(float)) + 1.0)
         
         # EVI = 2.5 * (B08 - B04) / ((B08 + 6.0 * B04 - 7.5 * B02) + 1.0)
         scaler1 = MinMaxScaler()
