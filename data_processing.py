@@ -35,8 +35,8 @@ class DataPreparation:
         # self.sent2_2021_500m = "Input/sentinel/2021/sent2_2021_500m/MscThesis_sentinel2_2021.tif"
         self.inp_raster_path = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/")
         self.target_dir = "Input/Target/"
-        self.CDL_dir = "Input/cdl/"
-        self.patch_size = 128
+        self.CDL_dir = "Input/cdl_all_crops/Iowa/"
+        self.patch_size = 256
         self.scaler = StandardScaler()
         # self.tile_height = 512
         
@@ -309,17 +309,22 @@ class DataPreparation:
         
         
         for year in self.year_list:
-            self.CDL_path = "Input/cdl/CDL_Soybean_Iowa_60m_"+year+".tif"
-            self.set_merged_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
+            cdl_file = self.CDL_dir + "CDL_allCrops_Iowa_60m_" + str(year)+".tif"
+            out_path = self.CDL_dir + "/patches/"
+            self.get_tile_patches(cdl_file,out_path,"Iowa"+year+"_july",self.patch_size)
+        
+#         for year in self.year_list:
+#             self.CDL_path = "Input/cdl/CDL_Soybean_Iowa_60m_"+year+".tif"
+#             self.set_merged_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
             
-            self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
-            # self.masked_out_file = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/sentinel_masked_2016.tif")
-            self.patchs_output_dir = "Input/sentinel/patches/Iowa_July_1_31/"
-            self.patchs_masked_output_dir = "Input/sentinel/patches_masked/Iowa_July_1_31/"
-            self.get_tile_patches(self.merged_out_file,self.patchs_output_dir,"Iowa_"+year+"_july",self.patch_size)
+#             self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
+#             # self.masked_out_file = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/sentinel_masked_2016.tif")
+#             self.patchs_output_dir = "Input/sentinel/patches/Iowa_July_1_31/"
+#             self.patchs_masked_output_dir = "Input/sentinel/patches_masked/Iowa_July_1_31/"
+#             self.get_tile_patches(self.merged_out_file,self.patchs_output_dir,"Iowa_"+year+"_july",self.patch_size)
             
-            self.get_tile_patches(self.masked_out_file,self.patchs_masked_output_dir,"Iowa_"+year+"_july",self.patch_size)
-            self.set_target_for_patches("Iowa",int(year),"Iowa")
+#             self.get_tile_patches(self.masked_out_file,self.patchs_masked_output_dir,"Iowa_"+year+"_july",self.patch_size)
+#             self.set_target_for_patches("Iowa",int(year),"Iowa")
         
 if __name__ == "__main__":
     

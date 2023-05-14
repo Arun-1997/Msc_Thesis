@@ -7,6 +7,7 @@ from PIL import Image
 import matplotlib.image as mpimg
 from rasterio.plot import reshape_as_image,reshape_as_raster,show
 import geopandas as gpd
+import pandas as pd
 from skimage.measure import block_reduce
 from sklearn.preprocessing import MinMaxScaler
 # from tensorflow.keras.preprocessing import image
@@ -25,13 +26,15 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 class saliency_map_analysis:
     
     def __init__(self):
-        self.input = "Output/saliency_maps/gradCAM_mask_sent/test/"
+        self.input = "Output/saliency_maps/gradCAM_nomask_sent/test/"
         self.target_file_path = "Input/Target_256/concat/Iowa.shp"
+        self.cdl_Allcrops_path = "Input/cdl_all_crops/Iowa/patches/"
+        self.cdl_id_val = "Input/cdl_all_crops/cdl_id_val.csv"
         self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
-        self.patch_dim = (256, 256, 16)
-        self.output = "Output/saliency_maps_analysis/mask"
+        self.patch_dim = (256, 256, 15)
+        self.output = "Output/saliency_maps_analysis/nomask"
         self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
-        self.clip2cdl = True
+        self.clip2cdl = False
         
     def read_input(self):
         input_file_list = glob.glob(os.path.join(self.input,"*.tif"))
@@ -59,13 +62,15 @@ class saliency_map_analysis:
             query = target_gdf.query(f"patch_name == '{f_name}'")["ykg_by_e7"]
             if len(query) != 1:
                 continue
-            
+            self.cdl_allCrops = self.get_cdl_allCrops(f_name,output_path,patch_src.meta)
             self.saliency = self.get_saliency_band(patch_src_read,file,output_path,patch_src.meta)
             self.ndvi = self.get_ndvi(patch_src_read,output_path,patch_src.meta)
             self.wdrvi = self.get_wdrvi(patch_src_read,output_path,patch_src.meta)
             self.savi = self.get_savi(patch_src_read,output_path,patch_src.meta)
             self.ndmi = self.get_ndmi(patch_src_read,output_path,patch_src.meta)
             self.evi = self.get_evi(patch_src_read,output_path,patch_src.meta)
+            
+            self.dataFrame = self.plot_relation(output_path)
             # ccci = self.get_ccci(patch_src_read,output_path,patch_src.meta)
             # ndvi_rgb = self.grayscale_to_rgb(ndvi)
             
@@ -125,6 +130,37 @@ class saliency_map_analysis:
         
         plt.imshow(cdl_layer)
         plt.savefig(os.path.join(output_path,"cdl_plot.png"))
+        plt.close()
+        return cdl_layer
+    
+    def get_cdl_allCrops(self,f_name,output_path,patch_meta):
+        
+        f_name_list = f_name.split("_")
+        year = f_name_list[1]
+        offset = f_name_list[3]
+        file_list = glob.glob(os.path.join(self.cdl_Allcrops_path,"*"+year+"*"+offset+"*.tif"))
+        if len(file_list) > 0:
+            file = file_list[0]
+        cdl_file = rio.open(file).read()
+        cdl_layer = cdl_file[0,:,:]
+        # print(cdl_file.shape)
+        kwargs = patch_meta
+        kwargs.update(
+            dtype=rio.float32,
+            count=1,
+            compress='lzw')
+        output_path_cdl = os.path.join(output_path,"cdl_allCrops_layer.tif")
+        with rio.open(output_path_cdl, 'w', **kwargs) as dst:
+            dst.write_band(1,cdl_layer.astype(rio.int32))
+                
+        ax = plt.subplot()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        im = ax.imshow(cdl_layer, cmap=plt.get_cmap('tab20'))
+        plt.title("CDL Layer")
+
+        plt.colorbar(im, cax=cax)
+        plt.savefig(os.path.join(output_path,"cdl_allCrops_plot.png"))
         plt.close()
         return cdl_layer
         
@@ -513,7 +549,27 @@ class saliency_map_analysis:
         plt.savefig(os.path.join(output_path,"evi_plot.png"))
         plt.close()
         return evi 
-
+    
+    def plot_relation(self,output_path):
+        
+        cdl_id_df = pd.read_csv(self.cdl_id_val)
+        df = pd.DataFrame()
+        df["ID"] = self.cdl_allCrops.flatten()
+        df["sal"] = self.saliency.flatten()
+        df["wdrvi"] = self.wdrvi.flatten()
+        df["evi"] = self.evi.flatten()
+        df["ndmi"] = self.ndmi.flatten()
+        df["ndvi"] = self.ndvi.flatten()
+        df["savi"] = self.savi.flatten()
+        df1 = pd.merge(df,cdl_id_df,on="ID",how="inner")
+        cdl_count = df1.groupby(["Value"]).count()
+        cdl_count["cdl_val"] = cdl_count.index
+        cdl_count["no_pixels"] = cdl_count.ID
+        cdl_count.plot.bar(x="cdl_val",y="no_pixels",figsize=(10,5))
+        plt.savefig(os.path.join(output_path,"area_pixel_wise.png"))
+        plt.close()
+        return df1
+        
     
     def upscale_layer(self,layer,scale_no=16):
         pass
