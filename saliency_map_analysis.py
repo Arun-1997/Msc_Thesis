@@ -26,18 +26,18 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 class saliency_map_analysis:
     
     def __init__(self):
-        self.input = "Output/saliency_maps/gradCAM_nomask_sent/test/"
+        self.input = "Output/saliency_maps/gradCAM_mask_sent/test/"
         self.target_file_path = "Input/Target_256/concat/Iowa.shp"
         self.cdl_Allcrops_path = "Input/cdl_all_crops/Iowa/patches/"
         self.cdl_id_val = "Input/cdl_all_crops/cdl_id_val.csv"
         self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
-        self.patch_dim = (256, 256, 15)
-        self.output = "Output/saliency_maps_analysis/nomask"
+        self.patch_dim = (256, 256, 16)
+        self.output = "Output/saliency_maps_analysis/mask"
         self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
         self.clip2cdl = False
         
     def read_input(self):
-        input_file_list = glob.glob(os.path.join(self.input,"*.tif"))
+        input_file_list = glob.glob(os.path.join(self.input,"*8448-1792.tif"))
         target_gdf = gpd.read_file(self.target_file_path)
         count = 0
         for file in input_file_list:
@@ -245,7 +245,7 @@ class saliency_map_analysis:
     
     def get_saliency_band(self, patch_src_read,file,output_path,patch_meta):
         
-        saliency_bands = patch_src_read[:,:,12:15]
+        saliency_bands = patch_src_read[:,:,13:16]
         
         output_file_rgb = os.path.join(output_path,"saliency_rgb.png")
        
@@ -564,10 +564,22 @@ class saliency_map_analysis:
         df1 = pd.merge(df,cdl_id_df,on="ID",how="inner")
         cdl_count = df1.groupby(["Value"]).count()
         cdl_count["cdl_val"] = cdl_count.index
-        cdl_count["no_pixels"] = cdl_count.ID
-        cdl_count.plot.bar(x="cdl_val",y="no_pixels",figsize=(10,5))
-        plt.savefig(os.path.join(output_path,"area_pixel_wise.png"))
+        cdl_count["pixel_count"] = cdl_count.ID
+        cdl_count.plot.bar(x="cdl_val",y="pixel_count",figsize=(10,5))
+        plt.savefig(os.path.join(output_path,"area_pixel_wise.png"), bbox_inches='tight')
         plt.close()
+        
+        cols = ["sal","wdrvi","evi","ndmi","ndvi","savi"]
+        cdl_count_sorted = cdl_count.sort_values(by="pixel_count",ascending=False)
+        
+        for i in range(4):
+            val = cdl_count_sorted.iloc[i]["cdl_val"]
+            df1.query("Value == '"+val+"'")[cols].mean().plot(legend=True,label=val)
+        
+        plt.savefig(os.path.join(output_path,"cdl_indices_corr.png"))
+        plt.close()
+        
+        
         return df1
         
     
