@@ -9,7 +9,7 @@ from tensorflow.keras import models
 import matplotlib.pyplot as plt
 from skimage.measure import block_reduce
 tf.compat.v1.disable_eager_execution()
-import os
+import os,cv2
 
 class perturbation_analysis_incl_gradCAM:
     
@@ -31,7 +31,8 @@ class perturbation_analysis_incl_gradCAM:
         self.nomask_cnn_model = models.load_model(self.nomask_model_path)
         
         file = rasterio.open(self.img_path)
-        img = reshape_as_image(file.read())
+        self.img_as_raster = file.read()
+        img = reshape_as_image(self.img_as_raster)
         self.mask_img_batch = np.expand_dims(img, axis=0)
 
         self.nomask_img_batch = self.mask_img_batch[:,:,:,0:12]
@@ -142,10 +143,122 @@ class perturbation_analysis_incl_gradCAM:
         ranks_nomask = order_nomask.argsort()
         self.saliency_dict[method_name]["rank_nomask_index"] = ranks_nomask
         ax[row_no,3].imshow(arr_reduced_nomask, cmap="jet")
+    
+    
+    def noisy(self,noise_typ,image):
         
+        # Parameters
+        # ----------
+        # image : ndarray
+        #     Input image data. Will be converted to float.
+        # mode : str
+        #     One of the following strings, selecting the type of noise to add:
+
+        #     'gauss'     Gaussian-distributed additive noise.
+        #     'poisson'   Poisson-distributed noise generated from the data.
+        #     's&p'       Replaces random pixels with 0 or 1.
+        #     'speckle'   Multiplicative noise using out = image + n*image,where
+        #                 n is uniform noise with specified mean & variance.
+
+        if noise_typ == "gauss":
+            row,col,ch= image.shape
+            mean = 0
+            var = 0.1
+            sigma = var**0.5
+            gauss = np.random.normal(mean,sigma,(row,col,ch))
+            gauss = gauss.reshape(row,col,ch)
+            noisy = image + gauss
+            # noisy = gauss
+            return noisy
+        elif noise_typ == "s&p":
+            row,col,ch = image.shape
+            s_vs_p = 0.5
+            amount = 0.004
+            out = np.copy(image)
+            # Salt mode
+            num_salt = np.ceil(amount * image.size * s_vs_p)
+            coords = [np.random.randint(0, i - 1, int(num_salt))
+                  for i in image.shape]
+            out[coords] = 1
+
+            # Pepper mode
+            num_pepper = np.ceil(amount* image.size * (1. - s_vs_p))
+            coords = [np.random.randint(0, i - 1, int(num_pepper))
+                  for i in image.shape]
+            out[coords] = 0
+            return out
+        elif noise_typ == "poisson":
+            vals = len(np.unique(image))
+            vals = 2 ** np.ceil(np.log2(vals))
+            noisy = np.random.poisson(image * vals) / float(vals)
+            return noisy
+        elif noise_typ =="speckle":
+            row,col,ch = image.shape
+            gauss = np.random.randn(row,col,ch)
+            gauss = gauss.reshape(row,col,ch)        
+            noisy = image + image * gauss
+            return noisy
         
+    def blockshaped(self,arr, nrows, ncols):
+        """
+        Return an array of shape (n, nrows, ncols) where
+        n * nrows * ncols = arr.size
+
+        If arr is a 2D array, the returned array should look like n subblocks with
+        each subblock preserving the "physical" layout of arr.
+        """
+        h, w = arr.shape
+        assert h % nrows == 0, f"{h} rows is not evenly divisible by {nrows}"
+        assert w % ncols == 0, f"{w} cols is not evenly divisible by {ncols}"
+        return (arr.reshape(h//nrows, nrows, -1, ncols)
+                   .swapaxes(1,2)
+                   .reshape(-1, nrows, ncols))
+
+    def unblockshaped(self,arr, h, w):
+        """
+        Return an array of shape (h, w) where
+        h * w = arr.size
+
+        If arr is of shape (n, nrows, ncols), n sublocks of shape (nrows, ncols),
+        then the returned array preserves the "physical" layout of the sublocks.
+        """
+        n, nrows, ncols = arr.shape
+        return (arr.reshape(h//nrows, -1, nrows, ncols)
+                   .swapaxes(1,2)
+                   .reshape(h, w))
+    
+    
+    def perturbate_based_on_rank(self):
+        img_split = []
+        img_raster = self.img_as_raster
+        for i in img_raster:
+            split = self.blockshaped(i,64,64)
+            img_split.append(split)
+        img_split = np.array(img_split)
+        img_split_swap = img_split.swapaxes(0,1)
+        gradCAM_rank = self.saliency_dict["gradCAM"]["rank_mask_index"]
+        for i in gradCAM_rank:
+            # print(img_split_swap[i].shape)
+            img_split_swap_image = reshape_as_image(img_split_swap[i])
+            img_split_swap_image = self.noisy("gauss",img_split_swap_image)
+            img_split_swap[i] = reshape_as_raster(img_split_swap_image)
+            # plt.imshow(img_split_swap_image[:,:,8])
+            break
+        img_split = img_split_swap.swapaxes(0,1)
+        img_array = []
+        for i in img_split:
+            img_reshaped = self.unblockshaped(i,256,256)
+            img_array.append(img_reshaped)
+        img_array = np.array(img_array)
+        # print(img_array.shape)
+        plt.imshow(img_array[7,:,:],cmap="jet",vmin=img_raster.min(),vmax=img_raster.max())
+        plt.savefig(os.path.join(self.output_path,"perturbation_plot.png"))
+        plt.close()
+        
+    
     def run(self):
         self.run_saliency()
+        self.perturbate_based_on_rank()
 
 if __name__ == "__main__":
     pp = perturbation_analysis_incl_gradCAM()
