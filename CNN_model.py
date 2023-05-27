@@ -81,8 +81,8 @@ class CNN_model:
             self.y.append(float(query))
             patch_src.close()
             count +=1
-            if count > 2000:
-                break
+            # if count > 2000:
+            #     break
 
         # self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
         self.y = np.array(self.y)

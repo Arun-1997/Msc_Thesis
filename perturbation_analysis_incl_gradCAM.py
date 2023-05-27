@@ -237,21 +237,28 @@ class perturbation_analysis_incl_gradCAM:
         img_split = np.array(img_split)
         img_split_swap = img_split.swapaxes(0,1)
         gradCAM_rank = self.saliency_dict["gradCAM"]["rank_mask_index"]
+        
+        fig,ax = plt.subplots(len(gradCAM_rank),2)
+        count = 0
+        
         for i in gradCAM_rank:
+            
             # print(img_split_swap[i].shape)
             img_split_swap_image = reshape_as_image(img_split_swap[i])
             img_split_swap_image = self.noisy("gauss",img_split_swap_image)
             img_split_swap[i] = reshape_as_raster(img_split_swap_image)
             # plt.imshow(img_split_swap_image[:,:,8])
-            break
-        img_split = img_split_swap.swapaxes(0,1)
-        img_array = []
-        for i in img_split:
-            img_reshaped = self.unblockshaped(i,256,256)
-            img_array.append(img_reshaped)
-        img_array = np.array(img_array)
-        # print(img_array.shape)
-        plt.imshow(img_array[7,:,:],cmap="jet",vmin=img_raster.min(),vmax=img_raster.max())
+            # break
+            img_split = img_split_swap.swapaxes(0,1)
+            img_array = []
+            for j in img_split:
+                img_reshaped = self.unblockshaped(j,256,256)
+                img_array.append(img_reshaped)
+            img_array = np.array(img_array)
+            # print(img_array.shape)
+            ax[count,0].imshow(self.saliency_dict["gradCAM"]["rank_mask"],cmap="jet")
+            ax[count,1].imshow(img_array[7,:,:],cmap="jet",vmin=img_raster.min(),vmax=img_raster.max())
+            count +=1
         plt.savefig(os.path.join(self.output_path,"perturbation_plot.png"))
         plt.close()
         

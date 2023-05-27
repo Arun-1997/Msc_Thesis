@@ -25,17 +25,17 @@ class DataPreparation:
         self.soybean_yield_path = "Input/soybean_yield/soybean_yield_county_level.csv"
         self.county_bdry_path = "Input/county_boundary/county_layer.shp"
         self.outdir = "Output/"
-        self.year_list = ['2016','2017','2018','2019','2020','2021']
+        self.year_list = ['2016','2017','2018','2021']
         # self.year_list = ['2020','2021']
 
         self.tiles_dir = "Input/sentinel/2021/sent_2021_tiles"
-        self.sentinel_image_dir = "Input/sentinel"
+        self.sentinel_image_dir = "Input/sentinel/test_data_from_drive/Msc_Thesis_Data_Nebraska_60m/"
         self.plot_dir = "Input/plots/"
         # self.sent2_500m_cdl = "Input/sentinel/2021/sent2_2021_500m/sent2_cdl_2021_500m.tif"
         # self.sent2_2021_500m = "Input/sentinel/2021/sent2_2021_500m/MscThesis_sentinel2_2021.tif"
-        self.inp_raster_path = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/")
+    
         self.target_dir = "Input/Target/"
-        self.CDL_dir = "Input/cdl_all_crops/Iowa/"
+        self.CDL_dir = "Input/sentinel/test_data_from_drive/Msc_Thesis_Data_Nebraska_60m/cdl/"
         self.patch_size = 256
         self.scaler = StandardScaler()
         # self.tile_height = 512
@@ -110,7 +110,7 @@ class DataPreparation:
 
     def set_merged_layer(self,year, outpath):
         sent_input = self.get_merged_sentinel(year,outpath)
-        
+        # print(sent_input.shape)
         cdl_layer = rio.open(self.CDL_path)
         # Masking of the CDL is done based on the availability of yield value for those counties at that year
         masked_gdf_path = self.outdir+"/yield_val/yield_"+str(year)+".shp"
@@ -118,14 +118,14 @@ class DataPreparation:
             shapes = [feature["geometry"] for feature in shapefile]
 
         masked_cdl,masked_transform = mask.mask(cdl_layer, shapes, crop=True)
-        
+        # print(masked_cdl.shape)
         out_meta = cdl_layer.meta
         out_meta.update({"driver": "GTiff",
-                         "height": masked_cdl.shape[1],
-                         "width": masked_cdl.shape[2],
+                         "height": sent_input.shape[1],
+                         "width": sent_input.shape[2],
                          "transform": masked_transform})
         
-        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Iowa_60m_"+str(year)+"_masked.tif"
+        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Nebraska_60m_"+str(year)+"_masked.tif"
         with rio.open(masked_cdl_path, "w", **out_meta) as dest:
             dest.write(masked_cdl)
         cdl_layer.close()        
@@ -168,11 +168,11 @@ class DataPreparation:
         
         out_meta = cdl_layer.meta
         out_meta.update({"driver": "GTiff",
-                         "height": masked_cdl.shape[1],
-                         "width": masked_cdl.shape[2],
+                         "height": sent_input.shape[1],
+                         "width": sent_input.shape[2],
                          "transform": masked_transform})
         
-        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Iowa_60m_"+str(year)+"_masked.tif"
+        masked_cdl_path = self.CDL_dir+"CDL_Soybean_Nebraska_60m_"+str(year)+"_masked.tif"
         with rio.open(masked_cdl_path, "w", **out_meta) as dest:
             dest.write(masked_cdl)
         cdl_layer.close()        
@@ -308,23 +308,22 @@ class DataPreparation:
         # self.set_target_for_patches("Iowa",2019,"Iowa")
         
         
-        for year in self.year_list:
-            cdl_file = self.CDL_dir + "CDL_allCrops_Iowa_60m_" + str(year)+".tif"
-            out_path = self.CDL_dir + "/patches/"
-            self.get_tile_patches(cdl_file,out_path,"Iowa"+year+"_july",self.patch_size)
+        # for year in self.year_list:
+        #     cdl_file = self.CDL_dir + "CDL_soybean_Indiana_60m_" + str(year)+".tif"
+            # out_path = self.CDL_dir + "/patches/"
+            # self.get_tile_patches(cdl_file,out_path,"Iowa"+year+"_july",self.patch_size)
         
-#         for year in self.year_list:
-#             self.CDL_path = "Input/cdl/CDL_Soybean_Iowa_60m_"+year+".tif"
-#             self.set_merged_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
+        for year in self.year_list:
+            self.CDL_path = self.CDL_dir+ "CDL_soybean_Nebraska_60m_"+year+".tif"
+            self.set_merged_layer(int(year),os.path.join(self.sentinel_image_dir,"Nebraska_"+year+"/"))
             
-#             self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,year+"_Iowa_july/"))
-#             # self.masked_out_file = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/sentinel_masked_2016.tif")
-#             self.patchs_output_dir = "Input/sentinel/patches/Iowa_July_1_31/"
-#             self.patchs_masked_output_dir = "Input/sentinel/patches_masked/Iowa_July_1_31/"
-#             self.get_tile_patches(self.merged_out_file,self.patchs_output_dir,"Iowa_"+year+"_july",self.patch_size)
-            
-#             self.get_tile_patches(self.masked_out_file,self.patchs_masked_output_dir,"Iowa_"+year+"_july",self.patch_size)
-#             self.set_target_for_patches("Iowa",int(year),"Iowa")
+            self.set_masked_layer(int(year),os.path.join(self.sentinel_image_dir,"Nebraska_"+year+"/"))
+            # self.masked_out_file = os.path.join(self.sentinel_image_dir,"2016_Iowa_july/sentinel_masked_2016.tif")
+            self.patchs_output_dir = self.sentinel_image_dir + "patches/"
+            self.patchs_masked_output_dir = self.sentinel_image_dir + "patches_masked/"
+            self.get_tile_patches(self.merged_out_file,self.patchs_output_dir,"Nebraska_"+year+"_july",self.patch_size)
+            self.get_tile_patches(self.masked_out_file,self.patchs_masked_output_dir,"Nebraska_"+year+"_july",self.patch_size)
+            self.set_target_for_patches("Nebraska",int(year),"Nebraska")
         
 if __name__ == "__main__":
     
