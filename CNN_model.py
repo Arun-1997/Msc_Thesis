@@ -20,17 +20,24 @@ import matplotlib.pyplot as plt
 import wandb
 from wandb.keras import WandbCallback
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 from datetime import datetime
 
+# config = tf.ConfigProto(
+#         device_count = {'GPU': 0}
+#     )
+# sess = tf.Session(config=config)
+
+
+# TRY USING CPU INSTEAD OF GPU?
 class CNN_model:
     
     def __init__(self):
         
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.training_path = "Input/sentinel/patches_256/Iowa_July_1_31/train/"
-        self.target_file_path = "Input/Target_256/concat/Iowa.shp"
-        self.patch_dim = (256, 256, 12)
+        self.training_path = "Input/sentinel/test_data_from_drive/patches_all/train/"
+        self.target_file_path = "Input/Target/concat/target_yield.shp"
+        self.patch_dim = (256, 256, 13)
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
@@ -63,7 +70,7 @@ class CNN_model:
 
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            patch_src_read = reshape_as_image(patch_src.read()[0:12]) ## Change the index here to add or remove the mask layer
+            patch_src_read = reshape_as_image(patch_src.read()) ## Change the index here to add or remove the mask layer
             if patch_src_read.shape != self.patch_dim:
                 self.ignore_patch_list.append(f_name)
                 # print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
@@ -81,7 +88,7 @@ class CNN_model:
             self.y.append(float(query))
             patch_src.close()
             count +=1
-            # if count > 2000:
+            # if count > 5000:
             #     break
 
         # self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
