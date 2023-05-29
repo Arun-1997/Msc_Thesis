@@ -45,11 +45,19 @@ class CNN_model:
         # self.scaler = StandardScaler()
     
     def set_config(self):
+        
+        mse = tf.keras.metrics.MeanSquaredError()
+        rmse = tf.keras.metrics.RootMeanSquaredError()
+        mae = tf.keras.metrics.MeanAbsoluteError()
+        mape = tf.keras.metrics.MeanAbsolutePercentageError()
+        msle = tf.keras.metrics.MeanSquaredLogarithmicError()
+        cos_sim = tf.keras.metrics.CosineSimilarity(axis=1)
+        log_cos = tf.keras.metrics.LogCoshError()
         self.config = {
-        "epochs":100,
+        "epochs":50,
         "batch_size":64,
         "loss_function":'mse',
-        "metrics":['mae'],
+        "metrics":[mse,rmse,mae,mape,msle,cos_sim,log_cos],
         "learning_rate":0.0001
         # "optimizer":'adam'
         }
@@ -138,7 +146,7 @@ class CNN_model:
                     # callbacks=[es],
                     epochs=self.config["epochs"],
                     batch_size=self.config["batch_size"],
-                    verbose=1)
+                    verbose=2)
 #         model.save('Output/models/CNN/')
 #         plt.plot(history.history['loss'], label='loss')
 #         plt.plot(history.history['val_loss'], label = 'val_loss')

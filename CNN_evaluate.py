@@ -15,8 +15,8 @@ class CNN_evaluate:
     
     def __init__(self):
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.test_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
-        self.target_file_path = "Input/Target_256/concat/Iowa.shp"
+        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/test/"
+        self.target_file_path = "Input/Target/concat/target_yield.shp"
         self.output_eval_dir = "Output/Evaluation/"
         self.pred_val = list()
         self.test_patches = list()
@@ -29,8 +29,9 @@ class CNN_evaluate:
         wandb.init(project="CNN_model_evaluate", entity="msc-thesis")
         now = datetime.now()
         date_time = now.strftime("%d_%m_%Y_%H_%M_%S")
-        # self.model_id = "aanaxs4g" # With mask
-        self.model_id = "ezb3xkqf" # No Mask
+        # self.model_id = "leuo8izn" # With mask all states
+        self.model_id = "vosvg9hw" # No mask all states
+        # self.model_id = "ezb3xkqf" # No Mask
         wandb.run.name = self.model_id+"_eval_"+date_time
         
     def read_test(self):

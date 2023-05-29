@@ -3,6 +3,7 @@ import innvestigate
 import rasterio
 import numpy as np
 from rasterio.plot import reshape_as_image,reshape_as_raster
+from tensorflow.keras.preprocessing import image
 import glob
 import geopandas as gpd
 from tensorflow.keras import models
@@ -13,19 +14,29 @@ import os,cv2
 
 class perturbation_analysis_incl_gradCAM:
     
-    def __init__(self):
-        self.file_name = "Iowa_2021_july_8448-1792"
-        self.img_path = 'Input/sentinel/patches_256/Iowa_July_1_31/test/'+self.file_name+'.tif'
+    def __init__(self,file_path):
+        self.file_name = file_path.split("/")[-1].split(".")[0]
+        self.img_path = 'Input/sentinel/test_data_from_drive/patches_all/test/'+self.file_name+'.tif'
+
         self.output_root_dir = "Output/perturbation/"
         self.output_path = os.path.join(self.output_root_dir,self.file_name)
         os.makedirs(self.output_path, exist_ok=True)
-        self.mask_model_id = "aanaxs4g" # With mask
+        # self.mask_model_id = "aanaxs4g" # With mask
         self.nomask_model_id = "ezb3xkqf" # No Mask
+        
+        self.mask_model_id = "leuo8izn" ## ALl states mask 
+        
+        
         self.mask_model_path = glob.glob("wandb/"+ "*"+self.mask_model_id+"*" + "/files/model-best.h5")[0]
         self.nomask_model_path = glob.glob("wandb/"+ "*"+self.nomask_model_id+"*" + "/files/model-best.h5")[0]
         self.mask_ev_gdf = gpd.read_file("Output/Evaluation/"+self.mask_model_id+".shp")
         self.nomask_ev_gdf = gpd.read_file("Output/Evaluation/"+self.nomask_model_id+".shp")
 
+        self.target_file = 'Output/Evaluation/'+self.mask_model_id+'.shp'
+        
+        query = gpd.read_file(self.target_file).query(f"patch_name == '{self.file_name}'")
+        self.true_val = float(query["true_val"])
+        self.pred_val = float(query[self.mask_model_id])
         # print(model_path)
         self.mask_cnn_model = models.load_model(self.mask_model_path)
         self.nomask_cnn_model = models.load_model(self.nomask_model_path)
@@ -132,16 +143,15 @@ class perturbation_analysis_incl_gradCAM:
         self.saliency_dict[method_name]["rank_mask"] = arr_reduced_mask
 
         order_mask = arr_reduced_mask.flatten().argsort()
-        ranks_mask = order_mask.argsort()
-        self.saliency_dict[method_name]["rank_mask_index"] = ranks_mask
+        
+        self.saliency_dict[method_name]["rank_mask_index"] = order_mask
         ax[row_no,2].imshow(arr_reduced_mask, cmap="jet")
 
         arr_reduced_nomask = block_reduce(self.saliency_dict[method_name]["no_mask"], block_size=block_size, func=np.mean, cval=np.mean(self.saliency_dict[method_name]["no_mask"]))
         self.saliency_dict[method_name]["rank_nomask"] = arr_reduced_nomask
 
         order_nomask = arr_reduced_nomask.flatten().argsort()
-        ranks_nomask = order_nomask.argsort()
-        self.saliency_dict[method_name]["rank_nomask_index"] = ranks_nomask
+        self.saliency_dict[method_name]["rank_nomask_index"] = order_nomask
         ax[row_no,3].imshow(arr_reduced_nomask, cmap="jet")
     
     
@@ -238,11 +248,11 @@ class perturbation_analysis_incl_gradCAM:
         img_split_swap = img_split.swapaxes(0,1)
         gradCAM_rank = self.saliency_dict["gradCAM"]["rank_mask_index"]
         
-        fig,ax = plt.subplots(len(gradCAM_rank),2)
+        fig,ax = plt.subplots(len(gradCAM_rank),2,figsize=(10,40))
         count = 0
         
         for i in gradCAM_rank:
-            
+
             # print(img_split_swap[i].shape)
             img_split_swap_image = reshape_as_image(img_split_swap[i])
             img_split_swap_image = self.noisy("gauss",img_split_swap_image)
@@ -256,17 +266,31 @@ class perturbation_analysis_incl_gradCAM:
                 img_array.append(img_reshaped)
             img_array = np.array(img_array)
             # print(img_array.shape)
-            ax[count,0].imshow(self.saliency_dict["gradCAM"]["rank_mask"],cmap="jet")
+            self.run_model(img_array)
+            ax[count,0].imshow(self.saliency_dict["gradCAM"]["rank_mask"],cmap="Reds")
             ax[count,1].imshow(img_array[7,:,:],cmap="jet",vmin=img_raster.min(),vmax=img_raster.max())
             count +=1
         plt.savefig(os.path.join(self.output_path,"perturbation_plot.png"))
         plt.close()
         
     
+    
+    def run_model(self,image_array):
+        
+        img_array = image.img_to_array(reshape_as_image(image_array))
+        img_batch = np.expand_dims(img_array, axis=0)
+        prediction = self.mask_cnn_model.predict(img_batch)
+        print("Predicted: ",prediction[0][0]," - True Val: ",self.pred_val," - Model pred: ",)
+    
     def run(self):
         self.run_saliency()
         self.perturbate_based_on_rank()
 
 if __name__ == "__main__":
-    pp = perturbation_analysis_incl_gradCAM()
-    pp.run()
+    
+    file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/'
+    file_list = glob.glob(file_path+"*.tif")
+    for file in file_list:
+        pp = perturbation_analysis_incl_gradCAM(file)
+        pp.run()
+        break
