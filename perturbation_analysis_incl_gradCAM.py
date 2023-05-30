@@ -4,17 +4,26 @@ import rasterio
 import numpy as np
 from rasterio.plot import reshape_as_image,reshape_as_raster
 from tensorflow.keras.preprocessing import image
-import glob
+import os,glob
 import geopandas as gpd
+import pandas as pd
 from tensorflow.keras import models
 import matplotlib.pyplot as plt
 from skimage.measure import block_reduce
 tf.compat.v1.disable_eager_execution()
 import os,cv2
 
+import numpy as np
+from scipy.integrate import simpson
+from numpy import trapz
+
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 class perturbation_analysis_incl_gradCAM:
     
     def __init__(self,file_path):
+        
+        
         self.file_name = file_path.split("/")[-1].split(".")[0]
         self.img_path = 'Input/sentinel/test_data_from_drive/patches_all/test/'+self.file_name+'.tif'
 
@@ -63,35 +72,35 @@ class perturbation_analysis_incl_gradCAM:
         lrp_a_masked  = self.get_saliency_maps("lrp.sequential_preset_a_flat", self.mask_cnn_model,self.mask_img_batch,13)
         lrp_b  = self.get_saliency_maps("lrp.sequential_preset_b_flat", self.nomask_cnn_model,self.nomask_img_batch,12)
         lrp_b_masked  = self.get_saliency_maps("lrp.sequential_preset_b_flat", self.mask_cnn_model,self.mask_img_batch,13)
-        gbp  = self.get_saliency_maps("guided_backprop", self.nomask_cnn_model,self.nomask_img_batch,12)
-        gbp_masked  = self.get_saliency_maps("guided_backprop", self.mask_cnn_model,self.mask_img_batch,13)
-        grad  = self.get_saliency_maps("gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
-        grad_masked  = self.get_saliency_maps("gradient", self.mask_cnn_model,self.mask_img_batch,13)
+        # gbp  = self.get_saliency_maps("guided_backprop", self.nomask_cnn_model,self.nomask_img_batch,12)
+        # gbp_masked  = self.get_saliency_maps("guided_backprop", self.mask_cnn_model,self.mask_img_batch,13)
+        # grad  = self.get_saliency_maps("gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
+        # grad_masked  = self.get_saliency_maps("gradient", self.mask_cnn_model,self.mask_img_batch,13)
         smoothgrad  = self.get_saliency_maps("smoothgrad", self.nomask_cnn_model,self.nomask_img_batch,12)
         smoothgrad_masked  = self.get_saliency_maps("smoothgrad", self.mask_cnn_model,self.mask_img_batch,13)
-        input_t_gradient  = self.get_saliency_maps("input_t_gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
-        input_t_gradient_masked  = self.get_saliency_maps("input_t_gradient", self.mask_cnn_model,self.mask_img_batch,13)
+        # input_t_gradient  = self.get_saliency_maps("input_t_gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
+        # input_t_gradient_masked  = self.get_saliency_maps("input_t_gradient", self.mask_cnn_model,self.mask_img_batch,13)
         deep_taylor  = self.get_saliency_maps("deep_taylor",self.nomask_cnn_model,self.nomask_img_batch,12)
         deep_taylor_masked  = self.get_saliency_maps("deep_taylor", self.mask_cnn_model,self.mask_img_batch,13)
-        integrated_gradients  = self.get_saliency_maps("integrated_gradients", self.nomask_cnn_model,self.nomask_img_batch,12)
-        integrated_gradients_masked  = self.get_saliency_maps("integrated_gradients", self.mask_cnn_model,self.mask_img_batch,13)
+        # integrated_gradients  = self.get_saliency_maps("integrated_gradients", self.nomask_cnn_model,self.nomask_img_batch,12)
+        # integrated_gradients_masked  = self.get_saliency_maps("integrated_gradients", self.mask_cnn_model,self.mask_img_batch,13)
         
         self.saliency_dict = {"lrp_a":{"mask":lrp_a_masked,
                          "no_mask":lrp_a},
                 "lrp_b":{"mask":lrp_b_masked,
                         "no_mask":lrp_b},
-                 "gbp":{"mask":gbp_masked,
-                        "no_mask":gbp},
-                 "grad":{"mask":grad_masked,
-                        "no_mask":grad},
+                 # "gbp":{"mask":gbp_masked,
+                 #        "no_mask":gbp},
+                 # "grad":{"mask":grad_masked,
+                 #        "no_mask":grad},
                  "smoothgrad":{"mask":smoothgrad_masked,
                         "no_mask":smoothgrad},
-                 "input_t_gradient":{"mask":input_t_gradient_masked,
-                        "no_mask":input_t_gradient},
+                 # "input_t_gradient":{"mask":input_t_gradient_masked,
+                 #        "no_mask":input_t_gradient},
                  "deep_taylor":{"mask":deep_taylor_masked,
-                        "no_mask":deep_taylor},
-                  "integrated_gradients":{"mask":integrated_gradients_masked,
-                        "no_mask":integrated_gradients}
+                        "no_mask":deep_taylor}
+                  # "integrated_gradients":{"mask":integrated_gradients_masked,
+                  #       "no_mask":integrated_gradients}
                 }
         
         self.set_saliency_plots()
@@ -106,7 +115,7 @@ class perturbation_analysis_incl_gradCAM:
         self.saliency_dict["gradCAM"] = {}
         self.saliency_dict["gradCAM"]["mask"] = grad_cam_mask
         self.saliency_dict["gradCAM"]["no_mask"] = grad_cam_nomask
-        fig,ax = plt.subplots(9,4,figsize = (10,20))
+        fig,ax = plt.subplots(5,4,figsize = (10,20))
         ax[0,0].set_title("With Mask Layer")
         ax[0,1].set_title("Without Mask Layer")
         ax[0,2].set_title("Rank (Mask)")
@@ -114,13 +123,13 @@ class perturbation_analysis_incl_gradCAM:
 
         self.plot_saliency(ax,0,"lrp_a")
         self.plot_saliency(ax,1,"lrp_b")
-        self.plot_saliency(ax,2,"gbp")
-        self.plot_saliency(ax,3,"grad")
-        self.plot_saliency(ax,4,"smoothgrad")
-        self.plot_saliency(ax,5,"input_t_gradient")
-        self.plot_saliency(ax,6,"deep_taylor")
-        self.plot_saliency(ax,7,"integrated_gradients")
-        self.plot_saliency(ax,8,"gradCAM",add_dim=True)
+        # self.plot_saliency(ax,2,"gbp")
+        # self.plot_saliency(ax,3,"grad")
+        self.plot_saliency(ax,2,"smoothgrad")
+        # self.plot_saliency(ax,5,"input_t_gradient")
+        self.plot_saliency(ax,3,"deep_taylor")
+        # self.plot_saliency(ax,7,"integrated_gradients")
+        self.plot_saliency(ax,4,"gradCAM",add_dim=True)
 
 
         plt.savefig(os.path.join(self.output_path,"Saliency_maps.png"))
@@ -135,9 +144,9 @@ class perturbation_analysis_incl_gradCAM:
         ax[row_no,1].imshow(self.saliency_dict[method_name]["no_mask"], cmap="jet")
         # ax[row_no,1].axis("off")
         if add_dim:
-            block_size = (64,64,3)
+            block_size = (32,32,3)
         else:
-            block_size = (64,64)
+            block_size = (32,32)
 
         arr_reduced_mask = block_reduce(self.saliency_dict[method_name]["mask"], block_size=block_size, func=np.mean, cval=np.mean(self.saliency_dict[method_name]["mask"]))
         self.saliency_dict[method_name]["rank_mask"] = arr_reduced_mask
@@ -238,19 +247,20 @@ class perturbation_analysis_incl_gradCAM:
                    .reshape(h, w))
     
     
-    def perturbate_based_on_rank(self):
+    def perturbate_based_on_rank(self,method_name):
         img_split = []
         img_raster = self.img_as_raster
         for i in img_raster:
-            split = self.blockshaped(i,64,64)
+            split = self.blockshaped(i,32,32)
             img_split.append(split)
         img_split = np.array(img_split)
         img_split_swap = img_split.swapaxes(0,1)
-        gradCAM_rank = self.saliency_dict["gradCAM"]["rank_mask_index"]
+        gradCAM_rank = self.saliency_dict[method_name]["rank_mask_index"]
         
-        fig,ax = plt.subplots(len(gradCAM_rank),2,figsize=(10,40))
+        # fig,ax = plt.subplots(len(gradCAM_rank),2,figsize=(3,40))
         count = 0
-        
+        diff_list = list()
+
         for i in gradCAM_rank:
 
             # print(img_split_swap[i].shape)
@@ -266,13 +276,14 @@ class perturbation_analysis_incl_gradCAM:
                 img_array.append(img_reshaped)
             img_array = np.array(img_array)
             # print(img_array.shape)
-            self.run_model(img_array)
-            ax[count,0].imshow(self.saliency_dict["gradCAM"]["rank_mask"],cmap="Reds")
-            ax[count,1].imshow(img_array[7,:,:],cmap="jet",vmin=img_raster.min(),vmax=img_raster.max())
+            diff = self.run_model(img_array)
+            diff_list.append(diff)
+            # ax[count,0].imshow(self.saliency_dict[method_name]["rank_mask"],cmap="Reds")
+            # ax[count,1].imshow(img_array[7,:,:],cmap="jet",vmin=img_raster.min(),vmax=img_raster.max())
             count +=1
-        plt.savefig(os.path.join(self.output_path,"perturbation_plot.png"))
-        plt.close()
-        
+        # plt.savefig(os.path.join(self.output_path,"perturbation_plot_"+method_name+".png"))
+        # plt.close()
+        return diff_list
     
     
     def run_model(self,image_array):
@@ -280,17 +291,53 @@ class perturbation_analysis_incl_gradCAM:
         img_array = image.img_to_array(reshape_as_image(image_array))
         img_batch = np.expand_dims(img_array, axis=0)
         prediction = self.mask_cnn_model.predict(img_batch)
-        print("Predicted: ",prediction[0][0]," - True Val: ",self.pred_val," - Model pred: ",)
-    
+        # print("Predicted: ",prediction[0][0]," - True Val: ",self.true_val," - Model pred: ",self.pred_val)
+        diff = prediction[0][0] - self.true_val
+        
+        return diff
+        
+        
     def run(self):
         self.run_saliency()
-        self.perturbate_based_on_rank()
-
+        
+        diff_df = pd.DataFrame()
+        
+        aoc = list()
+        for i_key,j_val in self.saliency_dict.items():
+            diff_list = self.perturbate_based_on_rank(i_key)
+            self.saliency_dict[i_key]["diff_list"] = diff_list
+            diff_df[i_key] = diff_list
+            
+            
+            # Compute the area using the composite trapezoidal rule.
+            area = trapz(diff_list, dx=1)
+            aoc.append(area)
+            # Compute the area using the composite Simpson's rule.
+            # area = simpson(y, dx=1)
+            # print("area =", area)
+        
+        # aoc_df = pd.DataFrame.from_dict(aoc)
+        # aoc_df.to_csv(os.path.join(self.output_root_dir,"aoc_all_patches.csv"))
+        # print(self.saliency_dict)
+        diff_df.plot()
+        plt.savefig(os.path.join(self.output_path,"diff_accuracy_plot.png"))
+        plt.close()
+        return aoc
+        
 if __name__ == "__main__":
     
     file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/'
     file_list = glob.glob(file_path+"*.tif")
+    aoc_dict = dict()
     for file in file_list:
+        patch_name = file.split("/")[-1].split(".")[0]
+        print(patch_name)
         pp = perturbation_analysis_incl_gradCAM(file)
-        pp.run()
-        break
+        aoc = pp.run()
+        aoc_dict[patch_name] = aoc
+        # break
+    aoc_df = pd.DataFrame.from_dict(aoc_dict,orient='index')
+    # aoc_df.columns =  ['lrp_a','lrp_b' ,'gbp','grad','smoothgrad','input_t_gradient', 'deep_taylor','integrated_gradients','gradCAM']
+    aoc_df.columns =  ['lrp_a','lrp_b' ,'smoothgrad', 'deep_taylor','gradCAM']
+    aoc_df.to_csv("Output/perturbation/aoc_all_patches.csv")
+    
