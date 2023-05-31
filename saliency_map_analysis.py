@@ -27,17 +27,21 @@ class saliency_map_analysis:
     
     def __init__(self):
         self.input = "Output/saliency_maps/gradCAM_mask_sent/test/"
-        self.target_file_path = "Input/Target_256/concat/Iowa.shp"
-        self.cdl_Allcrops_path = "Input/cdl_all_crops/Iowa/patches/"
+        
+        
+        self.target_file_path = "Input/Target/concat/target_yield.shp"
+        self.cdl_Allcrops_path = "Input/cdl_all_crops/patches_cdl/"
         self.cdl_id_val = "Input/cdl_all_crops/cdl_id_val.csv"
         self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
         self.patch_dim = (256, 256, 16)
         self.output = "Output/saliency_maps_analysis/mask"
-        self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
+        # self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
         self.clip2cdl = False
         
     def read_input(self):
-        input_file_list = glob.glob(os.path.join(self.input,"*8448-1792.tif"))
+        
+        concat_list = list()
+        input_file_list = glob.glob(os.path.join(self.input,"*.tif"))
         target_gdf = gpd.read_file(self.target_file_path)
         count = 0
         for file in input_file_list:
@@ -48,7 +52,8 @@ class saliency_map_analysis:
             
             output_path = os.path.join(self.output,f_name)
             os.makedirs(output_path, exist_ok=True)
-            self.cdl = self.get_cdl_layer(f_name,output_path,patch_src.meta)
+            self.cdl = self.get_cdl_layer(f_name,output_path,patch_src,patch_src.meta)
+            
             if self.clip2cdl:
                 patch_src_read = reshape_as_image(patch_src.read() * self.cdl)
             else:
@@ -70,13 +75,16 @@ class saliency_map_analysis:
             self.ndmi = self.get_ndmi(patch_src_read,output_path,patch_src.meta)
             self.evi = self.get_evi(patch_src_read,output_path,patch_src.meta)
             
-            self.dataFrame = self.plot_relation(output_path)
+            self.mean_val_df = self.plot_relation(output_path,f_name)
+            concat_list.append(self.mean_val_df)
+            concat_df = pd.concat( concat_list, ignore_index=True)
+            concat_df.to_csv(os.path.join(self.output,"mean_val_per_patch.csv"))
             # ccci = self.get_ccci(patch_src_read,output_path,patch_src.meta)
             # ndvi_rgb = self.grayscale_to_rgb(ndvi)
             
-            if self.has_mask:
-                mask = self.plot_mask(patch_src_read,output_path)                
-                self.clip_to_mask(mask,ndvi,evi,output_path)
+            # if self.has_mask:
+            #     mask = self.plot_mask(patch_src_read,output_path)                
+            #     self.clip_to_mask(mask,ndvi,evi,output_path)
             
             
             # saliency_array = saliency.flatten()
@@ -89,34 +97,37 @@ class saliency_map_analysis:
             # plt.savefig(os.path.join(output_path,"evi_ndmi_scatter.png"))
             # plt.close()
             
-            self.get_correlation_plot(self.evi,self.ndmi,output_path,x_label="evi",y_label="ndmi")
-            self.get_correlation_plot(self.ndmi,self.wdrvi,output_path,x_label="ndmi",y_label="wdrvi")
-            self.get_corr_with_saliency(self.saliency,self.ndmi,output_path,x_label="saliency",y_label="ndmi")
-            self.get_corr_with_saliency(self.saliency,self.evi,output_path,x_label="saliency",y_label="evi")
-            self.get_corr_with_saliency(self.saliency,self.wdrvi,output_path,x_label="saliency",y_label="wdrvi")
-            self.get_corr_with_saliency(self.saliency,self.savi,output_path,x_label="saliency",y_label="savi")
+#             self.get_correlation_plot(self.evi,self.ndmi,output_path,x_label="evi",y_label="ndmi")
+#             self.get_correlation_plot(self.ndmi,self.wdrvi,output_path,x_label="ndmi",y_label="wdrvi")
+#             self.get_corr_with_saliency(self.saliency,self.ndmi,output_path,x_label="saliency",y_label="ndmi")
+#             self.get_corr_with_saliency(self.saliency,self.evi,output_path,x_label="saliency",y_label="evi")
+#             self.get_corr_with_saliency(self.saliency,self.wdrvi,output_path,x_label="saliency",y_label="wdrvi")
+#             self.get_corr_with_saliency(self.saliency,self.savi,output_path,x_label="saliency",y_label="savi")
 
             
-            ndvi_diff = np.absolute(self.ndvi - self.saliency)
+#             ndvi_diff = np.absolute(self.ndvi - self.saliency)
             
-            # square = np.square(ndvi - saliency)
-            rmse = np.sqrt(np.average(np.square(self.ndvi-self.saliency)))
-            # print("RMSE : ",rmse)
-            # plt.imshow(ndvi_diff)
-            ax = plt.subplot()
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            im = ax.imshow(ndvi_diff,cmap="RdBu")
-            plt.colorbar(im, cax=cax)
-            plt.savefig(os.path.join(output_path,"sal_ndvi_absdiff.png"))
-            plt.close()
-            count +=1
-            break
+#             # square = np.square(ndvi - saliency)
+#             rmse = np.sqrt(np.average(np.square(self.ndvi-self.saliency)))
+#             # print("RMSE : ",rmse)
+#             # plt.imshow(ndvi_diff)
+#             ax = plt.subplot()
+#             divider = make_axes_locatable(ax)
+#             cax = divider.append_axes("right", size="5%", pad=0.05)
+#             im = ax.imshow(ndvi_diff,cmap="RdBu")
+#             plt.colorbar(im, cax=cax)
+#             plt.savefig(os.path.join(output_path,"sal_ndvi_absdiff.png"))
+#             plt.close()
+#             count +=1
+#             if count >= 3:
+#                 break
+        
+        
 
      
-    def get_cdl_layer(self,f_name,output_path,patch_meta):
-        file = os.path.join(self.mask_layer_path,f_name+".tif")
-        cdl_file = rio.open(file).read()
+    def get_cdl_layer(self,f_name,output_path,patch_src,patch_meta):
+        # file = os.path.join(self.mask_layer_path,f_name+".tif")
+        cdl_file = patch_src.read()
         cdl_layer = cdl_file[12,:,:]
         # print(cdl_file.shape)
         kwargs = patch_meta
@@ -136,32 +147,33 @@ class saliency_map_analysis:
     def get_cdl_allCrops(self,f_name,output_path,patch_meta):
         
         f_name_list = f_name.split("_")
+        state_name = f_name_list[0]
         year = f_name_list[1]
         offset = f_name_list[3]
-        file_list = glob.glob(os.path.join(self.cdl_Allcrops_path,"*"+year+"*"+offset+"*.tif"))
+        file_list = glob.glob(os.path.join(self.cdl_Allcrops_path,"*"+state_name+"*"+year+"*"+offset+"*.tif"))
         if len(file_list) > 0:
             file = file_list[0]
         cdl_file = rio.open(file).read()
         cdl_layer = cdl_file[0,:,:]
         # print(cdl_file.shape)
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_cdl = os.path.join(output_path,"cdl_allCrops_layer.tif")
-        with rio.open(output_path_cdl, 'w', **kwargs) as dst:
-            dst.write_band(1,cdl_layer.astype(rio.int32))
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_cdl = os.path.join(output_path,"cdl_allCrops_layer.tif")
+#         with rio.open(output_path_cdl, 'w', **kwargs) as dst:
+#             dst.write_band(1,cdl_layer.astype(rio.int32))
                 
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        im = ax.imshow(cdl_layer, cmap=plt.get_cmap('tab20'))
-        plt.title("CDL Layer")
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
+#         im = ax.imshow(cdl_layer, cmap=plt.get_cmap('tab20'))
+#         plt.title("CDL Layer")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"cdl_allCrops_plot.png"))
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"cdl_allCrops_plot.png"))
+#         plt.close()
         return cdl_layer
         
     def get_corr_with_saliency(self, x_inp, y_inp, output_path, x_label="x_label",y_label="y_label"):
@@ -247,68 +259,68 @@ class saliency_map_analysis:
         
         saliency_bands = patch_src_read[:,:,13:16]
         
-        output_file_rgb = os.path.join(output_path,"saliency_rgb.png")
+#         output_file_rgb = os.path.join(output_path,"saliency_rgb.png")
        
-        output_file_gray = os.path.join(output_path,"saliency_gray.png")
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        im = ax.imshow(saliency_bands,cmap="jet",vmin=0,vmax=1)
+#         output_file_gray = os.path.join(output_path,"saliency_gray.png")
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
+#         im = ax.imshow(saliency_bands,cmap="jet",vmin=0,vmax=1)
         
-        plt.colorbar(im, cax=cax)
-        plt.savefig(output_file_rgb)
-        plt.close()
-        saliency_bands_ras = reshape_as_raster(saliency_bands)
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=3,
-            compress='lzw')
-        output_path_ndvi = os.path.join(output_path,"saliency.tif")
-        with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
-            dst.write(saliency_bands_ras.astype(rio.float32))
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(output_file_rgb)
+#         plt.close()
+#         saliency_bands_ras = reshape_as_raster(saliency_bands)
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=3,
+#             compress='lzw')
+#         output_path_ndvi = os.path.join(output_path,"saliency.tif")
+#         with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
+#             dst.write(saliency_bands_ras.astype(rio.float32))
         
         
         # img = Image.open().convert('L')
         # img.save(output_file_gray)
         gray = self.rgb2gray(saliency_bands)        
         saliency_int = self.rgb2Int(saliency_bands)
-        plt.hist(gray)
-        plt.savefig(os.path.join(output_path,"saliency_map_hist.png"))
-        plt.close()
-        plt.hist(saliency_int)
-        plt.savefig(os.path.join(output_path,"saliency_int_hist.png"))
-        plt.close()
+#         plt.hist(gray)
+#         plt.savefig(os.path.join(output_path,"saliency_map_hist.png"))
+#         plt.close()
+#         plt.hist(saliency_int)
+#         plt.savefig(os.path.join(output_path,"saliency_int_hist.png"))
+#         plt.close()
 
         
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        im = ax.imshow(gray, cmap=plt.get_cmap('gray'))
-        plt.title("Saliency Map")
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
+#         im = ax.imshow(gray, cmap=plt.get_cmap('gray'))
+#         plt.title("Saliency Map")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(output_file_gray)
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(output_file_gray)
+#         plt.close()
         
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        im = ax.imshow(saliency_int, cmap=plt.get_cmap('jet'))
-        plt.title("Saliency Map Int")
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
+#         im = ax.imshow(saliency_int, cmap=plt.get_cmap('jet'))
+#         plt.title("Saliency Map Int")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"saliency_1band.png"))
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"saliency_1band.png"))
+#         plt.close()
         
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_ndvi = os.path.join(output_path,"saliency_int.tif")
-        with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
-            dst.write_band(1,saliency_int.astype(rio.float32))
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_ndvi = os.path.join(output_path,"saliency_int.tif")
+#         with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
+#             dst.write_band(1,saliency_int.astype(rio.float32))
         
         return saliency_int
     
@@ -325,28 +337,28 @@ class saliency_map_analysis:
         scaler_ndmi = MinMaxScaler()
         scaler_ndmi.fit(ndmi_original)
         ndmi = scaler_ndmi.transform(ndmi_original)
-        plt.hist(ndmi)
-        plt.savefig(os.path.join(output_path,"ndmi_hist.png"))
-        plt.close()
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_ndmi = os.path.join(output_path,"ndmi.tif")
-        with rio.open(output_path_ndmi, 'w', **kwargs) as dst:
-            dst.write_band(1, ndmi.astype(rio.float32))
-        # show(ndvi,cmap="jet")
+#         plt.hist(ndmi)
+#         plt.savefig(os.path.join(output_path,"ndmi_hist.png"))
+#         plt.close()
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_ndmi = os.path.join(output_path,"ndmi.tif")
+#         with rio.open(output_path_ndmi, 'w', **kwargs) as dst:
+#             dst.write_band(1, ndmi.astype(rio.float32))
+#         # show(ndvi,cmap="jet")
       
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
         
-        im = ax.imshow(ndmi,cmap="jet")
-        plt.title("NDMI")
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"ndmi_plot.png"))
-        plt.close()
+#         im = ax.imshow(ndmi,cmap="jet")
+#         plt.title("NDMI")
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"ndmi_plot.png"))
+#         plt.close()
         return ndmi 
 
     def grayscale_to_rgb(self,gray):
@@ -375,29 +387,29 @@ class saliency_map_analysis:
         scaler = MinMaxScaler()
         scaler.fit(ndvi_original)
         ndvi = scaler.transform(ndvi_original)
-        plt.hist(ndvi)
-        plt.savefig(os.path.join(output_path,"ndvi_hist.png"))
-        plt.close()
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_ndvi = os.path.join(output_path,"ndvi.tif")
-        with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
-            dst.write_band(1, ndvi.astype(rio.float32))
-        # show(ndvi,cmap="jet")
+#         plt.hist(ndvi)
+#         plt.savefig(os.path.join(output_path,"ndvi_hist.png"))
+#         plt.close()
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_ndvi = os.path.join(output_path,"ndvi.tif")
+#         with rio.open(output_path_ndvi, 'w', **kwargs) as dst:
+#             dst.write_band(1, ndvi.astype(rio.float32))
+#         # show(ndvi,cmap="jet")
       
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
         
-        im = ax.imshow(ndvi,cmap="jet",vmin=0,vmax=1)
-        plt.title("NDVI")
+#         im = ax.imshow(ndvi,cmap="jet",vmin=0,vmax=1)
+#         plt.title("NDVI")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"ndvi_plot.png"))
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"ndvi_plot.png"))
+#         plt.close()
         return ndvi 
 
     def get_wdrvi(self,patch_src_read,output_path,patch_meta):
@@ -413,29 +425,29 @@ class saliency_map_analysis:
         scaler_wdrvi.fit(wdrvi_original)
         wdrvi = scaler_wdrvi.transform(wdrvi_original)
 
-        plt.hist(wdrvi)
-        plt.savefig(os.path.join(output_path,"wdrvi_hist.png"))
-        plt.close()
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_wdrvi = os.path.join(output_path,"wdrvi.tif")
-        with rio.open(output_path_wdrvi, 'w', **kwargs) as dst:
-            dst.write_band(1, wdrvi.astype(rio.float32))
-        # show(ndvi,cmap="jet")
+#         plt.hist(wdrvi)
+#         plt.savefig(os.path.join(output_path,"wdrvi_hist.png"))
+#         plt.close()
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_wdrvi = os.path.join(output_path,"wdrvi.tif")
+#         with rio.open(output_path_wdrvi, 'w', **kwargs) as dst:
+#             dst.write_band(1, wdrvi.astype(rio.float32))
+#         # show(ndvi,cmap="jet")
       
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
         
-        im = ax.imshow(wdrvi,cmap="jet")
-        plt.title("WDRVI")
+#         im = ax.imshow(wdrvi,cmap="jet")
+#         plt.title("WDRVI")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"wdrvi_plot.png"))
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"wdrvi_plot.png"))
+#         plt.close()
         return wdrvi
     
     def get_savi(self,patch_src_read,output_path,patch_meta):
@@ -451,29 +463,29 @@ class saliency_map_analysis:
         scaler_savi = MinMaxScaler()
         scaler_savi.fit(savi_original)
         savi = scaler_savi.transform(savi_original)
-        plt.hist(savi)
-        plt.savefig(os.path.join(output_path,"savi_hist.png"))
-        plt.close()
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_savi = os.path.join(output_path,"savi.tif")
-        with rio.open(output_path_savi, 'w', **kwargs) as dst:
-            dst.write_band(1, savi.astype(rio.float32))
-        # show(ndvi,cmap="jet")
+#         plt.hist(savi)
+#         plt.savefig(os.path.join(output_path,"savi_hist.png"))
+#         plt.close()
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_savi = os.path.join(output_path,"savi.tif")
+#         with rio.open(output_path_savi, 'w', **kwargs) as dst:
+#             dst.write_band(1, savi.astype(rio.float32))
+#         # show(ndvi,cmap="jet")
       
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
         
-        im = ax.imshow(savi,cmap="jet")
-        plt.title("SAVI")
+#         im = ax.imshow(savi,cmap="jet")
+#         plt.title("SAVI")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"savi_plot.png"))
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"savi_plot.png"))
+#         plt.close()
         return savi
     
     
@@ -525,32 +537,32 @@ class saliency_map_analysis:
         scaler1 = MinMaxScaler()
         scaler1.fit(evi_original)
         evi = scaler1.transform(evi_original)
-        plt.hist(evi)
-        plt.savefig(os.path.join(output_path,"evi_hist.png"))
-        plt.close()
-        kwargs = patch_meta
-        kwargs.update(
-            dtype=rio.float32,
-            count=1,
-            compress='lzw')
-        output_path_evi = os.path.join(output_path,"evi.tif")
-        with rio.open(output_path_evi, 'w', **kwargs) as dst:
-            dst.write_band(1, evi.astype(rio.float32))
-        # show(ndvi,cmap="jet")
+#         plt.hist(evi)
+#         plt.savefig(os.path.join(output_path,"evi_hist.png"))
+#         plt.close()
+#         kwargs = patch_meta
+#         kwargs.update(
+#             dtype=rio.float32,
+#             count=1,
+#             compress='lzw')
+#         output_path_evi = os.path.join(output_path,"evi.tif")
+#         with rio.open(output_path_evi, 'w', **kwargs) as dst:
+#             dst.write_band(1, evi.astype(rio.float32))
+#         # show(ndvi,cmap="jet")
       
-        ax = plt.subplot()
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
+#         ax = plt.subplot()
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes("right", size="5%", pad=0.05)
         
-        im = ax.imshow(evi,cmap="jet")
-        plt.title("EVI")
+#         im = ax.imshow(evi,cmap="jet")
+#         plt.title("EVI")
 
-        plt.colorbar(im, cax=cax)
-        plt.savefig(os.path.join(output_path,"evi_plot.png"))
-        plt.close()
+#         plt.colorbar(im, cax=cax)
+#         plt.savefig(os.path.join(output_path,"evi_plot.png"))
+#         plt.close()
         return evi 
     
-    def plot_relation(self,output_path):
+    def plot_relation(self,output_path,f_name):
         
         cdl_id_df = pd.read_csv(self.cdl_id_val)
         df = pd.DataFrame()
@@ -572,15 +584,22 @@ class saliency_map_analysis:
         cols = ["sal","wdrvi","evi","ndmi","ndvi","savi"]
         cdl_count_sorted = cdl_count.sort_values(by="pixel_count",ascending=False)
         
+        mean_val_list = list()
         for i in range(4):
             val = cdl_count_sorted.iloc[i]["cdl_val"]
-            df1.query("Value == '"+val+"'")[cols].mean().plot(legend=True,label=val)
-        
+            mean_val = df1.query("Value == '"+val+"'")[cols].mean()
+            mean_val.plot(legend=True,label=val)
+            mean_val["cdl_val"] = val
+            mean_val["patch_name"] = f_name
+            mean_val_list.append(mean_val)
+            
+            
+        mean_val_df = pd.DataFrame(mean_val_list)
         plt.savefig(os.path.join(output_path,"cdl_indices_corr.png"))
         plt.close()
         
         
-        return df1
+        return mean_val_df
         
     
     def upscale_layer(self,layer,scale_no=16):

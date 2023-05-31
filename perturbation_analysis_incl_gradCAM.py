@@ -329,15 +329,20 @@ if __name__ == "__main__":
     file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/'
     file_list = glob.glob(file_path+"*.tif")
     aoc_dict = dict()
+    file_count = 0 
     for file in file_list:
+        file_count+=1
         patch_name = file.split("/")[-1].split(".")[0]
         print(patch_name)
         pp = perturbation_analysis_incl_gradCAM(file)
         aoc = pp.run()
         aoc_dict[patch_name] = aoc
+        aoc_df = pd.DataFrame.from_dict(aoc_dict,orient='index')
+        # aoc_df.columns =  ['lrp_a','lrp_b' ,'gbp','grad','smoothgrad','input_t_gradient', 'deep_taylor','integrated_gradients','gradCAM']
+        aoc_df.columns =  ['lrp_a','lrp_b' ,'smoothgrad', 'deep_taylor','gradCAM']
+        aoc_df.to_csv("Output/perturbation/aoc_all_patches.csv")
+        if file_count >= 20:
+            break
         # break
-    aoc_df = pd.DataFrame.from_dict(aoc_dict,orient='index')
-    # aoc_df.columns =  ['lrp_a','lrp_b' ,'gbp','grad','smoothgrad','input_t_gradient', 'deep_taylor','integrated_gradients','gradCAM']
-    aoc_df.columns =  ['lrp_a','lrp_b' ,'smoothgrad', 'deep_taylor','gradCAM']
-    aoc_df.to_csv("Output/perturbation/aoc_all_patches.csv")
+
     
