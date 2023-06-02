@@ -26,17 +26,17 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 class saliency_map_analysis:
     
     def __init__(self):
-        self.input = "Output/saliency_maps/gradCAM_mask_sent/test/"
+        self.input = "Output/saliency_maps/gradCAM_nomask_sent/test/"
         
         
         self.target_file_path = "Input/Target/concat/target_yield.shp"
         self.cdl_Allcrops_path = "Input/cdl_all_crops/patches_cdl/"
         self.cdl_id_val = "Input/cdl_all_crops/cdl_id_val.csv"
-        self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
-        self.patch_dim = (256, 256, 16)
-        self.output = "Output/saliency_maps_analysis/mask"
+        # self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
+        self.patch_dim = (256, 256, 15)
+        self.output = "Output/saliency_maps_analysis/nomask/"
         # self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
-        self.clip2cdl = False
+        # self.clip2cdl = True
         
     def read_input(self):
         
@@ -44,20 +44,26 @@ class saliency_map_analysis:
         input_file_list = glob.glob(os.path.join(self.input,"*.tif"))
         target_gdf = gpd.read_file(self.target_file_path)
         count = 0
+        test_dict = dict()
         for file in input_file_list:
             
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            
+            print(f_name)
             
             output_path = os.path.join(self.output,f_name)
-            os.makedirs(output_path, exist_ok=True)
-            self.cdl = self.get_cdl_layer(f_name,output_path,patch_src,patch_src.meta)
+            # os.makedirs(output_path, exist_ok=True)
+            # self.cdl = self.get_cdl_layer(f_name,output_path,patch_src,patch_src.meta)
             
-            if self.clip2cdl:
-                patch_src_read = reshape_as_image(patch_src.read() * self.cdl)
-            else:
-                patch_src_read = reshape_as_image(patch_src.read())
+            # masked_patch_src_read = reshape_as_image(patch_src.read() * self.cdl)
+            patch_src_read = reshape_as_image(patch_src.read())
+            test_reshape = patch_src_read.reshape([256*256,15])
+            test_mean = test_reshape[:,0:12].mean(axis=0)
+            test_dict[f_name] = test_mean
+            test_df = pd.DataFrame.from_dict(test_dict,orient="index")
+            test_df.to_csv(os.path.join(self.output,"bands_mean_per_patch_test.csv"))
+            
+            
             if patch_src_read.shape != self.patch_dim:
                 continue
                 
@@ -68,6 +74,9 @@ class saliency_map_analysis:
             if len(query) != 1:
                 continue
             self.cdl_allCrops = self.get_cdl_allCrops(f_name,output_path,patch_src.meta)
+            if self.cdl_allCrops.shape != self.patch_dim[0:2]:
+                print("Crop Layer Shape Mismatch! Skipping patch")
+                continue
             self.saliency = self.get_saliency_band(patch_src_read,file,output_path,patch_src.meta)
             self.ndvi = self.get_ndvi(patch_src_read,output_path,patch_src.meta)
             self.wdrvi = self.get_wdrvi(patch_src_read,output_path,patch_src.meta)
@@ -75,10 +84,12 @@ class saliency_map_analysis:
             self.ndmi = self.get_ndmi(patch_src_read,output_path,patch_src.meta)
             self.evi = self.get_evi(patch_src_read,output_path,patch_src.meta)
             
+            
+
             self.mean_val_df = self.plot_relation(output_path,f_name)
             concat_list.append(self.mean_val_df)
             concat_df = pd.concat( concat_list, ignore_index=True)
-            concat_df.to_csv(os.path.join(self.output,"mean_val_per_patch.csv"))
+            concat_df.to_csv(os.path.join(self.output,"mean_val_per_patch_test.csv"))
             # ccci = self.get_ccci(patch_src_read,output_path,patch_src.meta)
             # ndvi_rgb = self.grayscale_to_rgb(ndvi)
             
@@ -121,6 +132,8 @@ class saliency_map_analysis:
 #             count +=1
 #             if count >= 3:
 #                 break
+            # break
+            
         
         
 
@@ -257,7 +270,7 @@ class saliency_map_analysis:
     
     def get_saliency_band(self, patch_src_read,file,output_path,patch_meta):
         
-        saliency_bands = patch_src_read[:,:,13:16]
+        saliency_bands = patch_src_read[:,:,12:15]
         
 #         output_file_rgb = os.path.join(output_path,"saliency_rgb.png")
        
@@ -285,6 +298,7 @@ class saliency_map_analysis:
         # img.save(output_file_gray)
         gray = self.rgb2gray(saliency_bands)        
         saliency_int = self.rgb2Int(saliency_bands)
+        
 #         plt.hist(gray)
 #         plt.savefig(os.path.join(output_path,"saliency_map_hist.png"))
 #         plt.close()
@@ -567,6 +581,7 @@ class saliency_map_analysis:
         cdl_id_df = pd.read_csv(self.cdl_id_val)
         df = pd.DataFrame()
         df["ID"] = self.cdl_allCrops.flatten()
+  
         df["sal"] = self.saliency.flatten()
         df["wdrvi"] = self.wdrvi.flatten()
         df["evi"] = self.evi.flatten()
@@ -578,8 +593,8 @@ class saliency_map_analysis:
         cdl_count["cdl_val"] = cdl_count.index
         cdl_count["pixel_count"] = cdl_count.ID
         cdl_count.plot.bar(x="cdl_val",y="pixel_count",figsize=(10,5))
-        plt.savefig(os.path.join(output_path,"area_pixel_wise.png"), bbox_inches='tight')
-        plt.close()
+        # plt.savefig(os.path.join(output_path,"area_pixel_wise.png"), bbox_inches='tight')
+        # plt.close()
         
         cols = ["sal","wdrvi","evi","ndmi","ndvi","savi"]
         cdl_count_sorted = cdl_count.sort_values(by="pixel_count",ascending=False)
@@ -595,8 +610,8 @@ class saliency_map_analysis:
             
             
         mean_val_df = pd.DataFrame(mean_val_list)
-        plt.savefig(os.path.join(output_path,"cdl_indices_corr.png"))
-        plt.close()
+        # plt.savefig(os.path.join(output_path,"cdl_indices_corr.png"))
+        # plt.close()
         
         
         return mean_val_df

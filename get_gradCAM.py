@@ -23,10 +23,10 @@ class get_gradCAM:
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
         self.training_path = "Input/sentinel/test_data_from_drive/patches_all/train/"
         self.target_file_path = "Input/Target/concat/target_yield.shp"
-        self.model_id = "leuo8izn" # With mask
-        # self.model_id = "vosvg9hw" # No Mask
-        self.patch_dim = (256, 256, 13)
-        self.output_path = "Output/saliency_maps/gradCAM_mask_sent/train/"
+        # self.model_id = "leuo8izn" # With mask
+        self.model_id = "vosvg9hw" # No Mask
+        self.patch_dim = (256, 256, 12)
+        self.output_path = "Output/saliency_maps/gradCAM_nomask_sent/train/"
     
     
     def read_training(self):
@@ -39,7 +39,7 @@ class get_gradCAM:
 
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            patch_src_read = reshape_as_image(patch_src.read()[0:13]) ## Change the index here to add or remove the mask layer
+            patch_src_read = reshape_as_image(patch_src.read()[0:12]) ## Change the index here to add or remove the mask layer
             if patch_src_read.shape != self.patch_dim:               
                 continue
                 
@@ -57,7 +57,7 @@ class get_gradCAM:
             out_meta = patch_src.meta.copy()
             out_meta.update(
                 dtype=rio.float32,
-                count=16,
+                count=15,
                 )
             
             jet_heatmap = jet_heatmap/255
