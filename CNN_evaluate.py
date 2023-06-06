@@ -30,7 +30,8 @@ class CNN_evaluate:
         now = datetime.now()
         date_time = now.strftime("%d_%m_%Y_%H_%M_%S")
         # self.model_id = "leuo8izn" # With mask all states
-        self.model_id = "vosvg9hw" # No mask all states
+        # self.model_id = "vosvg9hw" # No mask all states
+        self.model_id = "vdv48shg" # NO mask all states 3 June 2023
         # self.model_id = "ezb3xkqf" # No Mask
         wandb.run.name = self.model_id+"_eval_"+date_time
         

@@ -11,6 +11,8 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras import datasets, layers, models
 import matplotlib.pyplot as plt
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import BatchNormalization
 # from tensorflow.keras.models import Sequential
 # from tensorflow.keras.layers import Conv2D
 # from tensorflow.keras.layers import MaxPool2D
@@ -37,7 +39,7 @@ class CNN_model:
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
         self.training_path = "Input/sentinel/test_data_from_drive/patches_all/train/"
         self.target_file_path = "Input/Target/concat/target_yield.shp"
-        self.patch_dim = (256, 256, 13)
+        self.patch_dim = (256, 256, 12)
         self.ignore_patch_list = list()
         self.x = list()
         self.y = list()
@@ -49,16 +51,17 @@ class CNN_model:
         mse = tf.keras.metrics.MeanSquaredError()
         rmse = tf.keras.metrics.RootMeanSquaredError()
         mae = tf.keras.metrics.MeanAbsoluteError()
-        mape = tf.keras.metrics.MeanAbsolutePercentageError()
+        # mape = tf.keras.metrics.MeanAbsolutePercentageError()
         msle = tf.keras.metrics.MeanSquaredLogarithmicError()
-        cos_sim = tf.keras.metrics.CosineSimilarity(axis=1)
-        log_cos = tf.keras.metrics.LogCoshError()
+        # cos_sim = tf.keras.metrics.CosineSimilarity(axis=1)
+        # log_cos = tf.keras.metrics.LogCoshError()
         self.config = {
-        "epochs":50,
-        "batch_size":64,
+        "epochs":75,
+        "batch_size":256,
         "loss_function":'mse',
-        "metrics":[mse,rmse,mae,mape,msle,cos_sim,log_cos],
-        "learning_rate":0.0001
+        # "metrics":[mse,rmse,mae,mape,msle,cos_sim,log_cos],
+        "metrics":[mse,mae,msle],
+        "learning_rate":0.000001
         # "optimizer":'adam'
         }
         wandb.init(project="test-project", entity="msc-thesis",config=self.config)
@@ -78,7 +81,7 @@ class CNN_model:
 
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            patch_src_read = reshape_as_image(patch_src.read()) ## Change the index here to add or remove the mask layer
+            patch_src_read = reshape_as_image(patch_src.read()[0:12]) ## Change the index here to add or remove the mask layer
             if patch_src_read.shape != self.patch_dim:
                 self.ignore_patch_list.append(f_name)
                 # print("Patch Dimensions Mismatch, skipping patch : {}".format(f_name))
@@ -119,17 +122,26 @@ class CNN_model:
         # sess = tf.Session(config=config)
 
         model = models.Sequential()
-        model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=self.patch_dim))
+        model.add(layers.Conv2D(128, (3, 3), activation='relu', input_shape=self.patch_dim))
         model.add(layers.MaxPooling2D((2, 2)))
         model.add(layers.Conv2D(64, (3, 3), activation='relu'))
         model.add(layers.MaxPooling2D((2, 2)))
+
         model.add(layers.Conv2D(64, (3, 3), activation='relu'))
         model.add(layers.MaxPooling2D((2, 2)))
+        model.add(layers.Conv2D(32, (3, 3), activation='relu'))
+        model.add(layers.MaxPooling2D((2, 2)))
+        
         
         model.add(layers.Flatten())
-        model.add(layers.Dense(64, activation='relu')) # Add another dense layer
-        model.add(layers.Dense(32, activation='relu'))
+        model.add(BatchNormalization())
         
+        model.add(layers.Dense(64, activation='relu')) # Add another dense layer
+        model.add(Dropout(0.5))
+        model.add(layers.Dense(32, activation='relu'))
+        model.add(layers.Dense(16, activation='relu'))
+        model.add(layers.Dense(8, activation='relu'))
+        model.add(layers.Dense(4, activation='relu'))
         model.add(layers.Dense(1,activation='linear'))
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.config["learning_rate"]),
                       loss=self.config["loss_function"], metrics=self.config["metrics"])
@@ -139,10 +151,10 @@ class CNN_model:
         #            mode='min',
         #            patience=50,
         #            restore_best_weights = True)
-        
+        es = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5)
         history = model.fit(self.X_train, self.y_train,
                     validation_data = (self.X_test, self.y_test),
-                    callbacks=[WandbCallback()],
+                    callbacks=[WandbCallback(),es],
                     # callbacks=[es],
                     epochs=self.config["epochs"],
                     batch_size=self.config["batch_size"],
