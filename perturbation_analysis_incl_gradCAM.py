@@ -326,7 +326,8 @@ class perturbation_analysis_incl_gradCAM:
         
 if __name__ == "__main__":
     
-    file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/'
+    # file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/'
+    file_path = 'Input/sentinel/patches_256/Iowa_July_1_31/test/Iowa_2021_july_8448-1792.tif'
     file_list = glob.glob(file_path+"*.tif")
     aoc_dict = dict()
     file_count = 0 
