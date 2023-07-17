@@ -26,15 +26,15 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 class saliency_map_analysis:
     
     def __init__(self):
-        self.input = "Output/saliency_maps/gradCAM_nomask_sent/test/"
+        self.input = "Output/saliency_maps/gradCAM_mask_sent/test/"
         
         
         self.target_file_path = "Input/Target/concat/target_yield.shp"
         self.cdl_Allcrops_path = "Input/cdl_all_crops/patches_cdl/"
         self.cdl_id_val = "Input/cdl_all_crops/cdl_id_val.csv"
         # self.mask_layer_path = "Input/sentinel/patches_256/Iowa_July_1_31/test/"
-        self.patch_dim = (256, 256, 15)
-        self.output = "Output/saliency_maps_analysis/nomask/"
+        self.patch_dim = (256, 256, 16)
+        self.output = "Output/saliency_maps_analysis/mask/"
         # self.has_mask = False # SET TO False IF MASK LAYER IS NOT IN THE INPUT
         # self.clip2cdl = True
         
@@ -49,7 +49,7 @@ class saliency_map_analysis:
             
             patch_src = rio.open(file)
             f_name = file.split("/")[-1].split(".")[0]
-            print(f_name)
+            
             
             output_path = os.path.join(self.output,f_name)
             # os.makedirs(output_path, exist_ok=True)
@@ -57,7 +57,7 @@ class saliency_map_analysis:
             
             # masked_patch_src_read = reshape_as_image(patch_src.read() * self.cdl)
             patch_src_read = reshape_as_image(patch_src.read())
-            test_reshape = patch_src_read.reshape([256*256,15])
+            test_reshape = patch_src_read.reshape([256*256,16])
             test_mean = test_reshape[:,0:12].mean(axis=0)
             test_dict[f_name] = test_mean
             test_df = pd.DataFrame.from_dict(test_dict,orient="index")
@@ -89,6 +89,7 @@ class saliency_map_analysis:
             self.mean_val_df = self.plot_relation(output_path,f_name)
             concat_list.append(self.mean_val_df)
             concat_df = pd.concat( concat_list, ignore_index=True)
+            print(f_name)
             concat_df.to_csv(os.path.join(self.output,"mean_val_per_patch_test.csv"))
             # ccci = self.get_ccci(patch_src_read,output_path,patch_src.meta)
             # ndvi_rgb = self.grayscale_to_rgb(ndvi)
@@ -270,7 +271,7 @@ class saliency_map_analysis:
     
     def get_saliency_band(self, patch_src_read,file,output_path,patch_meta):
         
-        saliency_bands = patch_src_read[:,:,12:15]
+        saliency_bands = patch_src_read[:,:,13:16]
         
 #         output_file_rgb = os.path.join(output_path,"saliency_rgb.png")
        

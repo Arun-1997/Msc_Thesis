@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from skimage.measure import block_reduce
 tf.compat.v1.disable_eager_execution()
 import os,cv2
-
+import seaborn as sns
 import numpy as np
 from scipy.integrate import simpson
 from numpy import trapz
@@ -72,18 +72,45 @@ class perturbation_analysis_incl_gradCAM:
         lrp_a_masked  = self.get_saliency_maps("lrp.sequential_preset_a_flat", self.mask_cnn_model,self.mask_img_batch,13)
         lrp_b  = self.get_saliency_maps("lrp.sequential_preset_b_flat", self.nomask_cnn_model,self.nomask_img_batch,12)
         lrp_b_masked  = self.get_saliency_maps("lrp.sequential_preset_b_flat", self.mask_cnn_model,self.mask_img_batch,13)
-        # gbp  = self.get_saliency_maps("guided_backprop", self.nomask_cnn_model,self.nomask_img_batch,12)
-        # gbp_masked  = self.get_saliency_maps("guided_backprop", self.mask_cnn_model,self.mask_img_batch,13)
-        # grad  = self.get_saliency_maps("gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
-        # grad_masked  = self.get_saliency_maps("gradient", self.mask_cnn_model,self.mask_img_batch,13)
+        gbp  = self.get_saliency_maps("guided_backprop", self.nomask_cnn_model,self.nomask_img_batch,12)
+        gbp_masked  = self.get_saliency_maps("guided_backprop", self.mask_cnn_model,self.mask_img_batch,13)
+        grad  = self.get_saliency_maps("gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
+        grad_masked  = self.get_saliency_maps("gradient", self.mask_cnn_model,self.mask_img_batch,13)
         smoothgrad  = self.get_saliency_maps("smoothgrad", self.nomask_cnn_model,self.nomask_img_batch,12)
         smoothgrad_masked  = self.get_saliency_maps("smoothgrad", self.mask_cnn_model,self.mask_img_batch,13)
-        # input_t_gradient  = self.get_saliency_maps("input_t_gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
-        # input_t_gradient_masked  = self.get_saliency_maps("input_t_gradient", self.mask_cnn_model,self.mask_img_batch,13)
+        input_t_gradient  = self.get_saliency_maps("input_t_gradient", self.nomask_cnn_model,self.nomask_img_batch,12)
+        input_t_gradient_masked  = self.get_saliency_maps("input_t_gradient", self.mask_cnn_model,self.mask_img_batch,13)
         deep_taylor  = self.get_saliency_maps("deep_taylor",self.nomask_cnn_model,self.nomask_img_batch,12)
         deep_taylor_masked  = self.get_saliency_maps("deep_taylor", self.mask_cnn_model,self.mask_img_batch,13)
-        # integrated_gradients  = self.get_saliency_maps("integrated_gradients", self.nomask_cnn_model,self.nomask_img_batch,12)
-        # integrated_gradients_masked  = self.get_saliency_maps("integrated_gradients", self.mask_cnn_model,self.mask_img_batch,13)
+        integrated_gradients  = self.get_saliency_maps("integrated_gradients", self.nomask_cnn_model,self.nomask_img_batch,12)
+        integrated_gradients_masked  = self.get_saliency_maps("integrated_gradients", self.mask_cnn_model,self.mask_img_batch,13)
+        
+        self.saliency_list_masked = [lrp_a_masked.flatten(),
+                             
+                             lrp_b_masked.flatten(),
+                            
+                             gbp_masked.flatten(),
+                            
+                             grad_masked.flatten(),
+                            
+                             smoothgrad_masked.flatten(),
+                            
+                            
+                             input_t_gradient_masked.flatten(),
+                             
+                             deep_taylor_masked.flatten(),
+                             integrated_gradients_masked.flatten()
+                                    ]
+        
+        self.saliency_list_nomask = [lrp_a.flatten(),
+                                     lrp_b.flatten(),
+                                     gbp.flatten(),
+                                     grad.flatten(),
+                                      smoothgrad.flatten(),
+                                      input_t_gradient.flatten(),
+                                     deep_taylor.flatten(),
+                                       integrated_gradients.flatten()
+                                    ]
         
         self.saliency_dict = {"lrp_a":{"mask":lrp_a_masked,
                          "no_mask":lrp_a},
@@ -115,12 +142,14 @@ class perturbation_analysis_incl_gradCAM:
         self.saliency_dict["gradCAM"] = {}
         self.saliency_dict["gradCAM"]["mask"] = grad_cam_mask
         self.saliency_dict["gradCAM"]["no_mask"] = grad_cam_nomask
-        fig,ax = plt.subplots(5,4,figsize = (10,20))
-        ax[0,0].set_title("With Mask Layer")
-        ax[0,1].set_title("Without Mask Layer")
-        ax[0,2].set_title("Rank (Mask)")
-        ax[0,3].set_title("Rank (Without Mask)")
-
+        fig,ax = plt.subplots(5,4,figsize = (20,40))
+        ax[0,0].set_title("With Mask Layer",size = 25)
+        ax[0,1].set_title("Without Mask Layer", size = 25)
+        ax[0,2].set_title("Rank (Mask)",size = 25)
+        ax[0,3].set_title("Rank (Without Mask)",size =25)
+#         ax[0,4].set_title("Boxplot (Mask)")
+#         ax[0,5].set_title("Boxplot (Without Mask)")
+        
         self.plot_saliency(ax,0,"lrp_a")
         self.plot_saliency(ax,1,"lrp_b")
         # self.plot_saliency(ax,2,"gbp")
@@ -135,14 +164,43 @@ class perturbation_analysis_incl_gradCAM:
         plt.savefig(os.path.join(self.output_path,"Saliency_maps.png"))
         fig.tight_layout()
         plt.close()
-    
+        
+        
+        # for i in self.saliency_dict:
+        #     print(i)
+        # sns.boxplot(self.saliency_list)
+        # plt.savefig(os.path.join(self.output_path,"boxplot.png"))
+        # plt.close()
+        
+#         print("Masked")
+#         for i in self.saliency_list_masked:
+#             print(np.var(i))
+
+#         print("No Masked")
+#         for i in self.saliency_list_nomask:
+#             print(np.var(i))
+
+            
     def plot_saliency(self,ax,row_no,method_name,add_dim = False):
-        ax[row_no,0].set_ylabel(method_name, rotation=90, size='large')
+        
+        
+        
+        
+        
         ax[row_no,0].imshow(self.saliency_dict[method_name]["mask"], cmap="jet")
+        ax[row_no,0].set_ylabel(method_name, rotation=90, size=25)
         # ax[row_no,0].axis("off")
+        
+        # Turn off tick labels
+        ax[row_no,0].set_yticklabels([])
+        ax[row_no,0].set_xticklabels([])
         # ax[row_no,0].set_title("With Mask Layer") 
         ax[row_no,1].imshow(self.saliency_dict[method_name]["no_mask"], cmap="jet")
-        # ax[row_no,1].axis("off")
+        
+        # Turn off tick labels
+        ax[row_no,1].set_yticklabels([])
+        ax[row_no,1].set_xticklabels([])
+
         if add_dim:
             block_size = (32,32,3)
         else:
@@ -155,6 +213,11 @@ class perturbation_analysis_incl_gradCAM:
         
         self.saliency_dict[method_name]["rank_mask_index"] = order_mask
         ax[row_no,2].imshow(arr_reduced_mask, cmap="jet")
+        # ax[row_no,2].axis("off")
+        
+        # Turn off tick labels
+        ax[row_no,2].set_yticklabels([])
+        ax[row_no,2].set_xticklabels([])
 
         arr_reduced_nomask = block_reduce(self.saliency_dict[method_name]["no_mask"], block_size=block_size, func=np.mean, cval=np.mean(self.saliency_dict[method_name]["no_mask"]))
         self.saliency_dict[method_name]["rank_nomask"] = arr_reduced_nomask
@@ -162,6 +225,14 @@ class perturbation_analysis_incl_gradCAM:
         order_nomask = arr_reduced_nomask.flatten().argsort()
         self.saliency_dict[method_name]["rank_nomask_index"] = order_nomask
         ax[row_no,3].imshow(arr_reduced_nomask, cmap="jet")
+        # ax[row_no,3].axis("off")
+        # Turn off tick labels
+        ax[row_no,3].set_yticklabels([])
+        ax[row_no,3].set_xticklabels([])
+
+#         ax[row_no,4].hist(self.saliency_dict[method_name]["mask"].flatten())
+        
+#         ax[row_no,5].hist(self.saliency_dict[method_name]["no_mask"].flatten())
     
     
     def noisy(self,noise_typ,image):
@@ -320,16 +391,19 @@ class perturbation_analysis_incl_gradCAM:
         # aoc_df.to_csv(os.path.join(self.output_root_dir,"aoc_all_patches.csv"))
         # print(self.saliency_dict)
         diff_df.plot()
+        plt.xlabel("Number of Grids")
+        plt.ylabel("Difference in Accuracy (Actual yield - Yield value after perturbation)") 
         plt.savefig(os.path.join(self.output_path,"diff_accuracy_plot.png"))
         plt.close()
         return aoc
         
 if __name__ == "__main__":
     
-    # file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/'
-    file_path = 'Input/sentinel/patches_256/Iowa_July_1_31/test/Iowa_2021_july_8448-1792.tif'
+    file_path = 'Output/saliency_maps/gradCAM_mask_sent/test/Indiana_2017_july_3072-5632'
+    # file_path = 'Input/sentinel/patches_256/Iowa_July_1_31/test/Iowa_2021_july_8448-1792.tif'
     file_list = glob.glob(file_path+"*.tif")
     aoc_dict = dict()
+    print(file_list)
     file_count = 0 
     for file in file_list:
         file_count+=1
@@ -339,11 +413,11 @@ if __name__ == "__main__":
         aoc = pp.run()
         aoc_dict[patch_name] = aoc
         aoc_df = pd.DataFrame.from_dict(aoc_dict,orient='index')
-        # aoc_df.columns =  ['lrp_a','lrp_b' ,'gbp','grad','smoothgrad','input_t_gradient', 'deep_taylor','integrated_gradients','gradCAM']
-        aoc_df.columns =  ['lrp_a','lrp_b' ,'smoothgrad', 'deep_taylor','gradCAM']
-        aoc_df.to_csv("Output/perturbation/aoc_all_patches.csv")
-        if file_count >= 20:
-            break
+        aoc_df.columns =  ['lrp_a','lrp_b' ,'gbp','grad','smoothgrad','input_t_gradient', 'deep_taylor','integrated_gradients','gradCAM']
+        # aoc_df.columns =  ['lrp_a','lrp_b' ,'smoothgrad', 'deep_taylor','gradCAM']
+        aoc_df.to_csv("Output/perturbation/aoc_all_patches_test.csv")
+        # if file_count >= 1:
+        #     break
         # break
 
     
