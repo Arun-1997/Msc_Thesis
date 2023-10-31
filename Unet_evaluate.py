@@ -10,6 +10,9 @@ from tensorflow.keras.preprocessing import image
 import wandb
 from shapely import wkt
 
+# import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -30,9 +33,9 @@ class CNN_evaluate:
     
     def __init__(self):
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/test/"
+        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/normalised_test/"
         self.target_file_path = "Input/Target/concat/target_yield.shp"
-        self.output_eval_dir = "Output/Evaluation/unet_segmented/model_2023-09-20 14:24:22.312458"
+        self.output_eval_dir = "Output/Evaluation/unet_segmented/model_BSize_256_NEpochs_10_2023-10-30 15:48:34.412397"
         if not os.path.exists(self.output_eval_dir):
             os.makedirs(self.output_eval_dir)
         self.pred_val = list()
@@ -50,7 +53,7 @@ class CNN_evaluate:
         # self.model_id = "vosvg9hw" # No mask all states
         # self.model_id = "vdv48shg" # NO mask all states 3 June 2023
         # self.model_id = "ezb3xkqf" # No Mask
-        self.model_id = "unet_model_20_sep" # Inception run 3
+        # self.model_id = "unet_model_20_sep" # Inception run 3
         # wandb.run.name = self.model_id+"_eval_"+date_time
         
     def read_test(self):
@@ -83,7 +86,14 @@ class CNN_evaluate:
             self.patch_name_list.append(f_name)
             self.patch_geom_list.append(rec["geometry"].iloc[0])
             
-            self.run_prediction(patch_src_read,f_name)
+            prediction = self.run_prediction(patch_src_read,f_name)
+            meta = patch_src.meta.copy()
+            meta.update(
+                dtype=rio.float32,
+                count=1)
+            outpath = self.output_eval_dir+"/"+f_name+".tif"
+            with rio.open(outpath, 'w', **meta) as outds:
+                outds.write_band(1,prediction)
             self.true_val.append(float(query))
             patch_src.close()
             count+=1
@@ -110,17 +120,20 @@ class CNN_evaluate:
         img_array = image.img_to_array(patch_src_read[:,:,0:12])
         img_batch = np.expand_dims(img_array, axis=0)
         prediction = self.model.predict(img_batch)
-        # print(prediction[0][:,:,0].shape)
-        plt.imshow(prediction[0][:,:,0])
-        plt.savefig(os.path.join(self.output_eval_dir,f_name+".png"))
+        print(prediction.shape)
+        print(prediction.min())
+        print(prediction.max())
+        
+        # plt.imshow(prediction[0][:,:,0])
+        plt.imsave(os.path.join(self.output_eval_dir,f_name+".png"),prediction[0][:,:,0],cmap=cm.gray)
         self.pred_val.append(prediction[0])
         self.test_patches.append(img_batch)
-
+        return prediction[0][:,:,0]
     
     def run(self):
         
         # model_path = glob.glob("wandb/"+ "*"+self.model_id+"*" + "/files/model-best.h5")[0]
-        model_path = "unet_files/model_2023-09-20 14:24:22.312458.h5"
+        model_path = "unet_multi_output/model_BSize_256_NEpochs_10_2023-10-30 15:48:34.412397.h5"
         
         # print(model_path)
         self.model = models.load_model(model_path, compile=False)
