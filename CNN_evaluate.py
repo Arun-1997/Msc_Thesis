@@ -15,7 +15,7 @@ class CNN_evaluate:
     
     def __init__(self):
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/test/"
+        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/normalised_test/"
         self.target_file_path = "Input/Target/concat/target_yield.shp"
         self.output_eval_dir = "Output/Evaluation/"
         self.pred_val = list()
@@ -33,7 +33,7 @@ class CNN_evaluate:
         # self.model_id = "vosvg9hw" # No mask all states
         # self.model_id = "vdv48shg" # NO mask all states 3 June 2023
         # self.model_id = "ezb3xkqf" # No Mask
-        self.model_id = "5zimc5w6" # Inception run 3
+        self.model_id = "tpd4yg53" # Inception run 3
         wandb.run.name = self.model_id+"_eval_"+date_time
         
     def read_test(self):
