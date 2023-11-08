@@ -35,7 +35,7 @@ class CNN_evaluate:
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
         self.test_path = "Input/sentinel/test_data_from_drive/patches_all/normalised_test/"
         self.target_file_path = "Input/Target/concat/target_yield.shp"
-        self.output_eval_dir = "Output/Evaluation/unet_segmented/model_BSize_256_NEpochs_10_2023-10-30 15:48:34.412397"
+        self.output_eval_dir = "Output/Evaluation/unet_segmented/model_BSize_350_NEpochs_30_2023-11-05 11:57:12.262151"
         if not os.path.exists(self.output_eval_dir):
             os.makedirs(self.output_eval_dir)
         self.pred_val = list()
@@ -133,7 +133,7 @@ class CNN_evaluate:
     def run(self):
         
         # model_path = glob.glob("wandb/"+ "*"+self.model_id+"*" + "/files/model-best.h5")[0]
-        model_path = "unet_multi_output/model_BSize_256_NEpochs_10_2023-10-30 15:48:34.412397.h5"
+        model_path = "unet_multi_output/model_BSize_350_NEpochs_30_2023-11-05 11:57:12.262151.h5"
         
         # print(model_path)
         self.model = models.load_model(model_path, compile=False)

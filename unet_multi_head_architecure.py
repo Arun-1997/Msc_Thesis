@@ -12,10 +12,10 @@
 #     name: python3
 # ---
 
-# +
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers,models
+from tensorflow.keras.layers import Dropout
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,39 +26,52 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from sklearn.model_selection import train_test_split
 import glob,os,sys,cv2
 from datetime import datetime
-
+import visualkeras
+from PIL import ImageFont
 import wandb
 from wandb.keras import WandbCallback
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-training_path = "Input/sentinel/test_data_from_drive/patches_all/normalised_train"
+os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
+training_path = "Input/sentinel/test_data_from_drive/patches_all/all_states_normalised_b2_b8_b11/train"
 target_file_path = "Input/Target/concat/target_yield.shp"
-patch_dim = (256, 256, 13)
-model_path = "wandb/run-20231105_115239-3eexbosr/files/model-best.h5"
+patch_dim = (256, 256, 4)
 
-# +
-metrics = [tf.keras.metrics.BinaryIoU(target_class_ids = (0, 1),
+
+
+
+mse = tf.keras.metrics.MeanSquaredError()
+rmse = tf.keras.metrics.RootMeanSquaredError()
+mae = tf.keras.metrics.MeanAbsoluteError()
+# mape = tf.keras.metrics.MeanAbsolutePercentageError()
+msle = tf.keras.metrics.MeanSquaredLogarithmicError()
+
+metrics = {'segmentation':[tf.keras.metrics.BinaryIoU(target_class_ids = (0, 1),
                             threshold=0.5,
                             name=None,
-                            dtype=None),tf.keras.metrics.BinaryAccuracy(
+                            dtype=None),
+           tf.keras.metrics.BinaryAccuracy(
                             name='binary_accuracy', dtype=None, threshold=0.5
-                        )]
+                        )],
+           'reg_output':[mse,mae,msle]}
+
 
 
 config = {
-"epochs":30,
-"batch_size":400,
-"loss_function":'binary_crossentropy',
+"epochs":15,
+"batch_size":64,
+"loss_function":{'segmentation': 'binary_crossentropy', 'reg_output': 'mse'},
 # "metrics":[mse,rmse,mae,mape,msle,cos_sim,log_cos],
 "metrics":metrics,
 "learning_rate":1e-4
 # "optimizer":'adam'
 }
-wandb.init(project="unet_segmentation", entity="msc-thesis",config=config)
+wandb.init(project="unet_multi_output", entity="msc-thesis",config=config)
 now = datetime.now()
 date_time = now.strftime("%d_%m_%Y_%H_%M_%S")
 
-wandb.run.name = wandb.run.id+"_"+date_time
+wandb.run.name = wandb.run.id+"_3bands_"+date_time
+
 
 
 # +
@@ -87,7 +100,6 @@ def upsample_block(x, conv_features, n_filters):
     return x
 
 
-# +
 def read_training():
     training_file_list = glob.glob(os.path.join(training_path,"*.tif"))
     target_gdf = gpd.read_file(target_file_path)
@@ -95,10 +107,13 @@ def read_training():
     ignore_patch_list = list()
     x = list()
     y = list()
+    y_reg = list()
     X_train = list()
     X_test = list()
     y_train = list()
+    y_train_reg = list()
     y_test = list()
+    y_test_reg = list()
     count = 0 
     for file in training_file_list:
 
@@ -121,32 +136,30 @@ def read_training():
         if len(query) != 1:
             # print("patch has no target value, skipping patch : {}".format(f_name))
             continue
-        # print(patch_src_read[:,:,0:12].shape)
-        # print(patch_src_read[:,:,12].shape)
-
-        x.append(patch_src_read[:,:,0:12])
-        y.append(patch_src_read[:,:,12])
-        # y.append(float(query))
+        x.append(patch_src_read[:,:,0:3])
+        y.append(patch_src_read[:,:,3])
+        y_reg.append(float(query))
 
         patch_src.close()
         # print(count)
         count +=1
-        # if count > 100:
-        #     break
+        if count > 1000:
+            break
 
     # self.y = self.scaler.fit_transform(np.array(self.y).reshape(-1, 1))
     y = np.array(y)
     y = np.expand_dims(y,-1)
+    y_reg = np.expand_dims(y_reg,-1)
     x = np.array(x)
     
     # x = (x-np.min(x))/(np.max(x)-np.min(x))
     print("Any Null values? ",np.isnan(x).any())
     # print(self.y)
     # self.x = np.nan_to_num(self.x, nan=0)# Check for different value for no data
-    print(f"x shape :{x.shape}, y shape: {y.shape}")
+    print(f"x shape :{x.shape}, y shape: {y.shape}, y_reg shape : {y_reg.shape}")
     # print(np.nanmin(self.x),np.nanmax(self.x))
-    X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.25)
-    return X_train, X_test, y_train, y_test
+    X_train, X_test, y_train, y_test,y_reg_train,y_reg_test = train_test_split(x, y, y_reg,test_size=0.25)
+    return X_train, X_test, y_train, y_test,y_reg_train,y_reg_test
     #Also, split the training into train and val
     # For testing, keep a part of the dataset as seperate (final month)
 
@@ -154,11 +167,10 @@ def read_training():
 # -
 
 
-
 # +
 def build_unet_model():
     # inputs
-    inputs = layers.Input(shape=(256,256,12))
+    inputs = layers.Input(shape=(256,256,3))
 
     # encoder: contracting path - downsample
     # 1 - downsample
@@ -172,16 +184,12 @@ def build_unet_model():
 
     # 5 - bottleneck
     bottleneck = double_conv_block(p4, 1024)
+    # model = keras.Sequential()
+    # bn = tf.keras.Model(inputs,bottleneck)
     
-    # flat = layers.Flatten()
-    # model.add(layers.Dense(64, activation='relu')) # Add another dense layer
-    # model.add(Dropout(0.5))
-    # model.add(layers.Dense(32, activation='relu'))
-    # model.add(layers.Dense(16, activation='relu'))
-    # model.add(layers.Dense(8, activation='relu'))
-    # model.add(layers.Dense(4, activation='relu'))
-    # model.add(layers.Dense(1,activation='linear'))
     
+    
+
     # decoder: expanding path - upsample
     # 6 - upsample
     u6 = upsample_block(bottleneck, f4, 512)
@@ -193,33 +201,46 @@ def build_unet_model():
     u9 = upsample_block(u8, f1, 64)
 
     # outputs
+    
+    flat = layers.Flatten()(u9)
+    reg_layer = layers.Dense(64, activation='relu')(flat) # Add another dense layer
+    reg_layer = Dropout(0.5)(reg_layer)
+    reg_layer = layers.Dense(32, activation='relu')(reg_layer)
+    reg_layer = layers.Dense(16, activation='relu')(reg_layer)
+    reg_layer = layers.Dense(8, activation='relu')(reg_layer)
+    reg_layer = layers.Dense(4, activation='relu')(reg_layer)
+    reg_layer = layers.Dense(1,activation='linear',name="reg_output")(reg_layer)
+    
+    
     # outputs = layers.Conv2D(1, 1, padding="same", activation = "softmax")(u9)
-    outputs = layers.Conv2D(1, 1, padding="same", activation = "sigmoid")(u9)
+    outputs = layers.Conv2D(1, 1, padding="same", name="segmentation",activation = "sigmoid")(u9)
 
     # unet model with Keras Functional API
-    unet_model = tf.keras.Model(inputs, outputs, name="U-Net")
+    unet_model = tf.keras.Model(inputs=inputs, outputs=[outputs,reg_layer], name="UNet_Multi_Head")
 
     return unet_model
 
 
-# unet_model = build_unet_model()
+unet_model = build_unet_model()
 # -
 
 
 
 
+
 # +
-def tf_parse(x,y):
-    def f(x, y):
-        return x, y
-    images, masks = tf.numpy_function(f, [x, y], [tf.float32, tf.float32])
-    images.set_shape([256, 256, 12])
+def tf_parse(x,y,y_reg):
+    def f(x, y,y_reg):
+        return x, y, y_reg
+    images, masks,yields = tf.numpy_function(f, [x, y, y_reg], [tf.float32, tf.float32,tf.float64])
+    images.set_shape([256, 256, 3])
     masks.set_shape([256, 256, 1])
-    return images, masks
+    yields.set_shape([1])
+    return images, masks, yields
 
 
-def tf_dataset(x,y,batch=8):
-    dataset = tf.data.Dataset.from_tensor_slices((x,y))
+def tf_dataset(x,y,y_reg,batch=8):
+    dataset = tf.data.Dataset.from_tensor_slices((x,y,y_reg))
     dataset = dataset.map(tf_parse)
     dataset = dataset.batch(batch)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
@@ -227,21 +248,21 @@ def tf_dataset(x,y,batch=8):
     return dataset
 
 
-X_train, X_test, y_train, y_test = read_training()
-unet_model = models.load_model(model_path, compile=True)
+X_train, X_test, y_train, y_test,y_reg_train,y_reg_test = read_training()
+# unet_model = models.load_model(model_path, compile=True)
 
-train_dataset = tf_dataset(X_train,y_train,batch=config["batch_size"])
-validation_dataset = tf_dataset(X_test,y_test,batch=config["batch_size"])
+train_dataset = tf_dataset(X_train,y_train,y_reg_train,batch=config["batch_size"])
+validation_dataset = tf_dataset(X_test,y_test,y_reg_test,batch=config["batch_size"])
 # -
 
 # +
-# unet_model.compile(optimizer=tf.keras.optimizers.Adam(config["learning_rate"]),
-#                    loss=config["loss_function"], metrics=config["metrics"])
+unet_model.compile(optimizer=tf.keras.optimizers.Adam(config["learning_rate"]),
+                   loss=config["loss_function"], metrics=config["metrics"])
 
-callbacks = [
-    ModelCheckpoint("unet_multi_output/model_BSize_"+str(config["batch_size"])+"_NEpochs_"+str(config["epochs"])+"_"+str(datetime.now())+".h5"),
+
+callbacks = [                             ModelCheckpoint("unet_multi_head_output/model_3bands_1000patches_BSize_"+str(config["batch_size"])+"_NEpochs_"+str(config["epochs"])+"_"+str(datetime.now())+".h5"),
     ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=2),
-    CSVLogger("unet_multi_output/data_BSize_"+str(config["batch_size"])+"_NEpochs_"+str(config["epochs"])+"_"+str(datetime.now())+".csv")
+    CSVLogger("unet_multi_head_output/data_3bands_1000patches_BSize_"+str(config["batch_size"])+"_NEpochs_"+str(config["epochs"])+"_"+str(datetime.now())+".csv")
     # TensorBoard(),
     # EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=False)
 ]
