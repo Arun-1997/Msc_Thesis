@@ -24,7 +24,7 @@ import rasterio as rio
 from rasterio.plot import reshape_as_image
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, CSVLogger, TensorBoard
 from sklearn.model_selection import train_test_split
-import glob,os,sys,cv2
+import glob,os,sys,cv2,math
 from datetime import datetime
 import visualkeras
 from PIL import ImageFont
@@ -130,7 +130,10 @@ def read_training():
         if np.isnan(patch_src_read).any():
             # print("Has Nan values, skipping patch : {}".format(f_name))
             continue
-
+        if np.unique(patch_src_read[:,:,3],return_counts=True)[1][1] < 655:
+            # Skipping patch since less than 1% of patch is covered by Soybean
+            # Not ideal for segmentation
+            continue
         # print(2)
         query = target_gdf.query(f"patch_name == '{f_name}'")["ykg_by_e7"]
         if len(query) != 1:
@@ -229,30 +232,46 @@ unet_model = build_unet_model()
 
 
 # +
-def tf_parse(x,y,y_reg):
-    def f(x, y,y_reg):
-        return x, y, y_reg
-    images, masks,yields = tf.numpy_function(f, [x, y, y_reg], [tf.float32, tf.float32,tf.float64])
-    images.set_shape([256, 256, 3])
-    masks.set_shape([256, 256, 1])
-    yields.set_shape([1])
-    return images, masks, yields
-
-
-def tf_dataset(x,y,y_reg,batch=8):
-    dataset = tf.data.Dataset.from_tensor_slices((x,y,y_reg))
-    dataset = dataset.map(tf_parse)
-    dataset = dataset.batch(batch)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    # break
-    return dataset
 
 
 X_train, X_test, y_train, y_test,y_reg_train,y_reg_test = read_training()
 # unet_model = models.load_model(model_path, compile=True)
 
-train_dataset = tf_dataset(X_train,y_train,y_reg_train,batch=config["batch_size"])
-validation_dataset = tf_dataset(X_test,y_test,y_reg_test,batch=config["batch_size"])
+
+def generate_data(x, y,y_reg, batch_size = 32):
+    num_examples = len(y)
+    num_of_batches = math.ceil(num_examples/batch_size)
+    for j in range(num_of_batches):
+        start_index = j*batch_size
+        
+        end_index = start_index+batch_size
+        if end_index > num_examples:
+            end_index = num_examples
+        
+        b_size = end_index - start_index
+        x_batch = np.zeros((b_size, 256, 256, 3))
+        y_batch = np.zeros((b_size,256,256,1))
+        reg_batch = np.zeros((b_size,))
+        
+                
+        for i in range(0, batch_size):
+            # index = np.random.randint(0, num_examples)
+            if start_index >= num_examples:
+                break
+            image, mask, r_yield = x[start_index], y[start_index], y_reg[start_index]
+            start_index+=1
+            x_batch[i] = image
+            y_batch[i] = mask
+            reg_batch[i] = r_yield
+
+        yield x_batch, [y_batch, reg_batch]
+
+
+
+train_dataset = generate_data(X_train,y_train,y_reg_train,batch_size=config["batch_size"])
+validation_dataset = generate_data(X_test,y_test,y_reg_test,batch_size=config["batch_size"])
+
+
 # -
 
 # +
