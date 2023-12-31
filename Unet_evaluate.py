@@ -33,9 +33,10 @@ class CNN_evaluate:
     
     def __init__(self):
         os.chdir("/home/jovyan/MSC_Thesis/MSc_Thesis_2023")
-        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/normalised_test/"
+        self.test_path = "Input/sentinel/test_data_from_drive/patches_all/normalised_train/"
         self.target_file_path = "Input/Target/concat/target_yield.shp"
-        self.output_eval_dir = "Output/Evaluation/unet_segmented/model_BSize_350_NEpochs_30_2023-11-05 11:57:12.262151"
+        self.model_id = "pi1o6mj5"
+        self.output_eval_dir = "Output/Evaluation/unet_segmented/model_"+self.model_id
         if not os.path.exists(self.output_eval_dir):
             os.makedirs(self.output_eval_dir)
         self.pred_val = list()
@@ -97,8 +98,8 @@ class CNN_evaluate:
             self.true_val.append(float(query))
             patch_src.close()
             count+=1
-            if count == 5:
-                break
+            # if count == 100:
+            #     break
         
         
         self.test_patches = np.array(self.test_patches)        
@@ -120,9 +121,9 @@ class CNN_evaluate:
         img_array = image.img_to_array(patch_src_read[:,:,0:12])
         img_batch = np.expand_dims(img_array, axis=0)
         prediction = self.model.predict(img_batch)
-        print(prediction.shape)
-        print(prediction.min())
-        print(prediction.max())
+        # print(prediction.shape)
+        # print(prediction.min())
+        # print(prediction.max())
         
         # plt.imshow(prediction[0][:,:,0])
         plt.imsave(os.path.join(self.output_eval_dir,f_name+".png"),prediction[0][:,:,0],cmap=cm.gray)
@@ -132,8 +133,8 @@ class CNN_evaluate:
     
     def run(self):
         
-        # model_path = glob.glob("wandb/"+ "*"+self.model_id+"*" + "/files/model-best.h5")[0]
-        model_path = "unet_multi_output/model_BSize_350_NEpochs_30_2023-11-05 11:57:12.262151.h5"
+        model_path = glob.glob("wandb/"+ "*"+self.model_id+"*" + "/files/model-best.h5")[0]
+        # model_path = "unet_multi_output/model_BSize_350_NEpochs_30_2023-11-05 11:57:12.262151.h5"
         
         # print(model_path)
         self.model = models.load_model(model_path, compile=False)
